@@ -38,7 +38,7 @@ def materialize_repo() -> None:
     shutil.copytree(repo_source, WORKING_REPO)
 
 
-def materialize_wheels() -> Path:
+def materialize_wheels() -> Path | None:
     working_wheel_dir = Path("/kaggle/working/offline_wheels")
     if working_wheel_dir.exists():
         shutil.rmtree(working_wheel_dir)
@@ -56,7 +56,7 @@ def materialize_wheels() -> Path:
     else:
         recursive_wheels = sorted(ASSET_ROOT.rglob("*.whl"))
         if not recursive_wheels:
-            raise FileNotFoundError(f"Missing offline wheel bundle under {ASSET_ROOT}")
+            return None
         working_wheel_dir.mkdir(parents=True, exist_ok=True)
         for wheel_path in recursive_wheels:
             shutil.copy2(wheel_path, working_wheel_dir / wheel_path.name)
@@ -116,7 +116,8 @@ def main() -> None:
         apply_runtime_config_overrides()
 
         env = os.environ.copy()
-        env["NEMOTRON_OFFLINE_WHEEL_DIRS"] = str(resolved_wheel_dir)
+        if resolved_wheel_dir is not None:
+            env["NEMOTRON_OFFLINE_WHEEL_DIRS"] = str(resolved_wheel_dir)
         subprocess.run(
             ["python", "training/kaggle_kernel_entry.py", "--skip-synthetic"],
             cwd=str(WORKING_REPO),
