@@ -1,0 +1,224 @@
+from __future__ import annotations
+
+import argparse
+import inspect
+import sys
+from pathlib import Path
+from typing import Any, Callable
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from common import (
+    answers_match,
+    build_generation_config,
+    extract_boxed_answer,
+    extract_thinking_section,
+    load_config,
+    maybe_seed,
+    read_jsonl,
+    render_generation_prompt,
+    resolve_model_id,
+    save_json,
+    token_count,
+)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Stage 2 GRPO for Nemotron reasoning LoRA.")
+    parser.add_argument("--config", default="training/train_config.yaml")
+    parser.add_argument("--train-file", default="data/processed/train_grpo.jsonl")
+    parser.add_argument("--stage1-dir", default=None)
+    parser.add_argument("--output-dir", default=None)
+    return parser.parse_args()
+
+
+def grpo_args(config: dict[str, Any], output_dir: str):
+    from trl import GRPOConfig
+
+    stage_config = config["stage2_grpo"]
+    return build_generation_config(
+        GRPOConfig,
+        output_dir=output_dir,
+        learning_rate=stage_config["learning_rate"],
+        per_device_train_batch_size=stage_config["per_device_train_batch_size"],
+        gradient_accumulation_steps=stage_config["gradient_accumulation_steps"],
+        num_train_epochs=stage_config["num_train_epochs"],
+        beta=stage_config["beta"],
+        lr_scheduler_type=stage_config["lr_scheduler_type"],
+        num_generations=stage_config["num_generations"],
+        max_prompt_length=stage_config["max_prompt_length"],
+        max_completion_length=stage_config["max_completion_length"],
+        temperature=stage_config["temperature"],
+        use_vllm=stage_config["use_vllm"],
+        vllm_mode=stage_config["vllm_mode"],
+        vllm_gpu_memory_utilization=stage_config["vllm_gpu_memory_utilization"],
+        offload_optimizer=stage_config["offload_optimizer"],
+        offload_reference_model=stage_config["offload_reference_model"],
+        vllm_enable_sleep_mode=False,
+        logging_steps=1,
+        report_to=[],
+        seed=config["project"]["seed"],
+    )
+
+
+def load_tokenizer(model_id: str, trust_remote_code: bool):
+    from transformers import AutoTokenizer
+
+    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=trust_remote_code)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.padding_side = "left"
+    return tokenizer
+
+
+def build_dataset_rows(config: dict[str, Any], tokenizer, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for record in records:
+        rows.append(
+            {
+                "prompt": render_generation_prompt(
+                    problem=record["question"],
+                    tokenizer=tokenizer if config["template"]["mode"] == "official" else None,
+                    system_prompt=config["template"]["system_prompt"],
+                    template_mode=config["template"]["mode"],
+                ),
+                "ground_truth": record["boxed_answer"],
+                "question": record["question"],
+                "difficulty_bucket": record["difficulty_bucket"],
+                "source_name": record["source_name"],
+            }
+        )
+    return rows
+
+
+def load_stage1_model(config: dict[str, Any], stage1_dir: str):
+    import torch
+    from peft import PeftModel
+    from transformers import AutoModelForCausalLM, BitsAndBytesConfig
+
+    model_id = resolve_model_id(config)
+    quantization_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_use_double_quant=True,
+        bnb_4bit_compute_dtype=torch.bfloat16,
+    )
+    base_model = AutoModelForCausalLM.from_pretrained(
+        model_id,
+        quantization_config=quantization_config,
+        torch_dtype=torch.bfloat16,
+        device_map="auto",
+        trust_remote_code=config["model"]["trust_remote_code"],
+        attn_implementation=config["model"]["attn_implementation"],
+    )
+    return PeftModel.from_pretrained(base_model, stage1_dir, is_trainable=True)
+
+
+def reward_correct_answer(completions, ground_truth, **kwargs) -> list[float]:
+    rewards: list[float] = []
+    for completion, truth in zip(completions, ground_truth):
+        text = completion if isinstance(completion, str) else str(completion)
+        boxed = extract_boxed_answer(text)
+        if boxed is None:
+            rewards.append(-1.0)
+        elif answers_match(boxed, truth):
+            rewards.append(1.0)
+        else:
+            rewards.append(-0.5)
+    return rewards
+
+
+def reward_boxed_format_present(completions, **kwargs) -> list[float]:
+    return [0.3 if "\\boxed{" in (completion if isinstance(completion, str) else str(completion)) else -0.3 for completion in completions]
+
+
+def make_reward_reasoning_conciseness(tokenizer) -> Callable[..., list[float]]:
+    def reward_reasoning_conciseness(completions, **kwargs) -> list[float]:
+        rewards: list[float] = []
+        for completion in completions:
+            text = completion if isinstance(completion, str) else str(completion)
+            thinking = extract_thinking_section(text)
+            length = token_count(thinking, tokenizer)
+            if 400 <= length <= 1200:
+                rewards.append(0.2)
+            elif 1200 < length <= 2000:
+                rewards.append(0.0)
+            elif length > 2000:
+                rewards.append(-0.1 * (length / 2000.0))
+            else:
+                rewards.append(-0.05)
+        return rewards
+
+    return reward_reasoning_conciseness
+
+
+def reward_no_answer_leakage(completions, ground_truth, **kwargs) -> list[float]:
+    rewards: list[float] = []
+    for completion, truth in zip(completions, ground_truth):
+        text = completion if isinstance(completion, str) else str(completion)
+        thinking = extract_thinking_section(text).lower()
+        truth_text = str(truth).strip().lower()
+        rewards.append(-0.1 if truth_text and truth_text in thinking else 0.1)
+    return rewards
+
+
+def main() -> None:
+    args = parse_args()
+    config = load_config(args.config)
+    maybe_seed(int(config["project"]["seed"]))
+    stage1_dir = args.stage1_dir or config["paths"]["stage1_output_dir"]
+    output_dir = args.output_dir or config["paths"]["stage2_output_dir"]
+    records = read_jsonl(args.train_file)
+    if not records:
+        raise FileNotFoundError("No GRPO training data found. Run data/filter_and_curate.py first.")
+
+    model_id = resolve_model_id(config)
+    tokenizer = load_tokenizer(model_id, config["model"]["trust_remote_code"])
+    dataset_rows = build_dataset_rows(config, tokenizer, records)
+
+    from datasets import Dataset
+    from trl import GRPOTrainer
+
+    model = load_stage1_model(config, stage1_dir)
+    trainer_kwargs = {
+        "model": model,
+        "args": grpo_args(config, output_dir),
+        "reward_funcs": [
+            reward_correct_answer,
+            reward_boxed_format_present,
+            make_reward_reasoning_conciseness(tokenizer),
+            reward_no_answer_leakage,
+        ],
+        "train_dataset": Dataset.from_list(dataset_rows),
+    }
+    signature = inspect.signature(GRPOTrainer.__init__).parameters
+    if "processing_class" in signature:
+        trainer_kwargs["processing_class"] = tokenizer
+    elif "tokenizer" in signature:
+        trainer_kwargs["tokenizer"] = tokenizer
+
+    trainer = GRPOTrainer(**trainer_kwargs)
+    train_result = trainer.train()
+    trainer.save_model(output_dir)
+    tokenizer.save_pretrained(output_dir)
+
+    artifacts_dir = Path(config["paths"]["artifacts_dir"]) / "stage2_grpo"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    save_json(
+        artifacts_dir / "training_summary.json",
+        {
+            "model_id": model_id,
+            "stage1_dir": stage1_dir,
+            "train_result": getattr(train_result, "metrics", {}),
+            "log_history": trainer.state.log_history,
+            "output_dir": output_dir,
+            "dataset_count": len(dataset_rows),
+        },
+    )
+    print({"output_dir": output_dir, "dataset_count": len(dataset_rows)})
+
+
+if __name__ == "__main__":
+    main()

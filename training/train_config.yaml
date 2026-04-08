@@ -1,0 +1,193 @@
+project:
+  name: nemotron-reasoning-lora
+  seed: 1337
+  timezone: Asia/Singapore
+  date_created: 2026-04-08
+
+model:
+  requested_model_id: nvidia/nemotron-3-nano-30b-a3b-bf16
+  canonical_model_id: nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16
+  canonical_base_model_id: nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-Base-BF16
+  use_canonical_hf_id_by_default: true
+  trust_remote_code: true
+  attn_implementation: flash_attention_2
+  load_in_4bit: true
+  max_seq_length: 8192
+  gpu_memory_utilization: 0.92
+  max_model_len: 8192
+
+template:
+  mode: official
+  official_thinking_token: "<think>"
+  legacy_sft_open: "<extra_id_2>thinking"
+  legacy_synthetic_open: "<extra_id_1>thinking"
+  thinking_close: "</think>"
+  legacy_close: "</extra_id_2>"
+  system_prompt: "You are a helpful assistant. Think carefully and place your final answer in \\boxed{}."
+  prompt_variants:
+    - "Think step by step. Place your final answer in \\boxed{}."
+    - "You are an expert mathematician. Work through this carefully, showing all steps. Your final answer must be in \\boxed{}."
+    - "Solve the following problem. Think deeply before answering. Final answer: \\boxed{}."
+
+paths:
+  raw_dir: data/raw
+  processed_dir: data/processed
+  artifacts_dir: artifacts
+  outputs_dir: outputs
+  stage1_output_dir: outputs/stage1_sft
+  stage2_output_dir: outputs/stage2_grpo
+  eval_dir: artifacts/eval
+  submission_dir: submission
+  notebook_metrics_dir: artifacts/notebook
+
+datasets:
+  requested:
+    - openai/gsm8k
+    - lighteval/MATH
+    - AI-MO/NuminaMath-CoT
+    - nvidia/OpenMathReasoning
+    - HuggingFaceH4/numina-math-cots
+    - EleutherAI/hendrycks_math
+  resolved:
+    gsm8k:
+      requested_id: openai/gsm8k
+      dataset_id: openai/gsm8k
+      config_name: main
+      split_names: []
+      priority: 2
+      difficulty: easy
+    math:
+      requested_id: lighteval/MATH
+      dataset_id: HuggingFaceH4/MATH
+      split_names: []
+      priority: 3
+      difficulty: mixed
+      note: "Requested ID did not resolve on 2026-04-08; using live Hugging Face H4 mirror."
+    numina_cot:
+      requested_id: AI-MO/NuminaMath-CoT
+      dataset_id: AI-MO/NuminaMath-CoT
+      split_names: []
+      priority: 4
+      difficulty: hard
+    open_math_reasoning:
+      requested_id: nvidia/OpenMathReasoning
+      dataset_id: nvidia/OpenMathReasoning
+      split_names: []
+      priority: 5
+      difficulty: mixed
+    numina_h4:
+      requested_id: HuggingFaceH4/numina-math-cots
+      dataset_id: HuggingFaceH4/numina_60k_math_verify_correct_2_4gens_with_rm_scores
+      split_names: []
+      priority: 3
+      difficulty: hard
+      note: "Requested ID did not resolve on 2026-04-08; using the closest live Hugging Face H4 Numina verification set."
+    hendrycks_math:
+      requested_id: EleutherAI/hendrycks_math
+      dataset_id: EleutherAI/hendrycks_math
+      split_names: []
+      priority: 2
+      difficulty: mixed
+  download_caps:
+    gsm8k: 9000
+    math: 12500
+    numina_cot: 125000
+    open_math_reasoning: 150000
+    numina_h4: 60000
+    hendrycks_math: 12500
+
+curation:
+  target_size: 50000
+  validation_size: 2500
+  grpo_hard_subset_size: 20000
+  difficulty_mix:
+    easy: 0.2
+    medium: 0.4
+    hard: 0.4
+  reasoning_token_min: 200
+  reasoning_token_max: 3000
+  quality_keep_fraction: 0.7
+  hard_dataset_names:
+    - numina_cot
+    - numina_h4
+    - open_math_reasoning
+  olympiad_markers:
+    - olympiad
+    - imo
+    - aimo
+    - aime
+    - usamo
+    - putnam
+    - shortlist
+
+synthetic:
+  enabled: true
+  hardest_problem_count: 2000
+  traces_per_problem: 5
+  temperature: 0.85
+  top_p: 0.95
+  max_new_tokens: 2048
+  output_file: data/processed/synthetic.jsonl
+  request_timeout_seconds: 180
+
+stage1_sft:
+  model_id: nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16
+  lora_r: 32
+  lora_alpha: 64
+  lora_dropout: 0.05
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+  load_in_4bit: true
+  loftq_init: true
+  max_seq_length: 8192
+  per_device_train_batch_size: 2
+  gradient_accumulation_steps: 4
+  learning_rate: 2.0e-4
+  lr_scheduler_type: cosine
+  warmup_ratio: 0.05
+  num_train_epochs: 2
+  bf16: true
+  optim: paged_adamw_8bit
+  attn_implementation: flash_attention_2
+  logging_steps: 5
+  save_strategy: epoch
+  eval_strategy: "no"
+  gradient_checkpointing: true
+
+stage2_grpo:
+  num_generations: 8
+  max_prompt_length: 1024
+  max_completion_length: 4096
+  learning_rate: 5.0e-6
+  per_device_train_batch_size: 2
+  gradient_accumulation_steps: 4
+  num_train_epochs: 1
+  beta: 0.01
+  lr_scheduler_type: cosine_with_restarts
+  temperature: 0.7
+  use_vllm: true
+  vllm_mode: colocate
+  vllm_gpu_memory_utilization: 0.92
+  offload_optimizer: false
+  offload_reference_model: false
+
+evaluation:
+  deterministic_temperature: 0.0
+  deterministic_max_tokens: 7680
+  best_of_n_temperature: 0.7
+  best_of_n: 16
+  max_model_len: 8192
+  gpu_memory_utilization: 0.92
+
+submission:
+  zip_name: submission.zip
+  required_files:
+    - adapter_config.json
+    - adapter_model.safetensors
+  max_zip_mb: 500
