@@ -4,13 +4,17 @@ import os
 import shutil
 import subprocess
 import tarfile
+import traceback
 import zipfile
 from pathlib import Path
+import json
 
 
 ASSET_ROOT = Path("/kaggle/input/nemotron-runtime-assets")
 REPO_ARCHIVE = ASSET_ROOT / "nemotron-reasoning-lora.tar.gz"
 WORKING_REPO = Path("/kaggle/working/nemotron-reasoning-lora")
+ASSET_SNAPSHOT_PATH = Path("/kaggle/working/asset_snapshot.json")
+LAUNCHER_ERROR_PATH = Path("/kaggle/working/launcher_error.txt")
 
 
 def locate_repo_source() -> tuple[str, Path]:
@@ -63,13 +67,37 @@ def materialize_wheels() -> Path:
     return working_wheel_dir
 
 
-def main() -> None:
-    materialize_repo()
-    resolved_wheel_dir = materialize_wheels()
+def dump_asset_snapshot() -> None:
+    files: list[dict[str, object]] = []
+    if ASSET_ROOT.exists():
+        for path in sorted(ASSET_ROOT.rglob("*"))[:400]:
+            record = {
+                "path": str(path.relative_to(ASSET_ROOT)),
+                "is_dir": path.is_dir(),
+            }
+            if path.is_file():
+                record["size"] = path.stat().st_size
+            files.append(record)
+    payload = {
+        "asset_root": str(ASSET_ROOT),
+        "exists": ASSET_ROOT.exists(),
+        "entries": files,
+    }
+    ASSET_SNAPSHOT_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
-    env = os.environ.copy()
-    env["NEMOTRON_OFFLINE_WHEEL_DIRS"] = str(resolved_wheel_dir)
-    subprocess.run(["python", "training/kaggle_kernel_entry.py"], cwd=str(WORKING_REPO), env=env, check=True)
+
+def main() -> None:
+    dump_asset_snapshot()
+    try:
+        materialize_repo()
+        resolved_wheel_dir = materialize_wheels()
+
+        env = os.environ.copy()
+        env["NEMOTRON_OFFLINE_WHEEL_DIRS"] = str(resolved_wheel_dir)
+        subprocess.run(["python", "training/kaggle_kernel_entry.py"], cwd=str(WORKING_REPO), env=env, check=True)
+    except Exception:
+        LAUNCHER_ERROR_PATH.write_text(traceback.format_exc(), encoding="utf-8")
+        raise
 
 
 if __name__ == "__main__":
