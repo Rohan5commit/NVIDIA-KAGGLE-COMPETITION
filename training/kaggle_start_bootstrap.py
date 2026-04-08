@@ -45,16 +45,21 @@ def discover_wheel_files(config: dict[str, object]) -> list[str]:
         "mamba_ssm-*.whl",
         "vllm-*.whl",
     ]
-    wheel_files: list[str] = []
+    wheel_files_by_name: dict[str, str] = {}
+    seen_dirs: set[str] = set()
     for wheel_dir in wheel_dirs:
+        if wheel_dir in seen_dirs:
+            continue
+        seen_dirs.add(wheel_dir)
         path = Path(wheel_dir)
         if not path.exists():
             continue
         for pattern in wheel_patterns:
             matches = sorted(path.glob(pattern))
             if matches:
-                wheel_files.append(str(matches[-1]))
-    return sorted(dict.fromkeys(wheel_files))
+                wheel_path = matches[-1]
+                wheel_files_by_name.setdefault(wheel_path.name, str(wheel_path))
+    return sorted(wheel_files_by_name.values())
 
 
 def main() -> None:

@@ -46,7 +46,7 @@ def materialize_wheels() -> Path:
     wheel_zip = ASSET_ROOT / "offline_wheels.zip"
     wheel_tar = ASSET_ROOT / "offline_wheels.tar"
     if wheel_dir.exists():
-        shutil.copytree(wheel_dir, working_wheel_dir)
+        return wheel_dir
     elif wheel_zip.exists():
         with zipfile.ZipFile(wheel_zip) as archive:
             archive.extractall(working_wheel_dir)
