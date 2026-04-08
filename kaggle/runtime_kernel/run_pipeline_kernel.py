@@ -91,8 +91,9 @@ def apply_runtime_config_overrides() -> None:
     if not config_path.exists():
         return
     config_text = config_path.read_text(encoding="utf-8")
-    # Some Nemotron runtime builds reject FlashAttention2 through Transformers init.
-    config_text = config_text.replace("attn_implementation: flash_attention_2", "attn_implementation: sdpa")
+    # Current Kaggle Nemotron runtime only initializes with eager attention in Transformers.
+    config_text = config_text.replace("attn_implementation: flash_attention_2", "attn_implementation: eager")
+    config_text = config_text.replace("attn_implementation: sdpa", "attn_implementation: eager")
     config_path.write_text(config_text, encoding="utf-8")
 
 
