@@ -226,6 +226,29 @@ def apply_nemotron_blackwell_compat_fallback(model: Any) -> bool:
             out = out + bias
         return _apply_activation(out, activation)
 
+    def _patched_moe(self: Any, hidden_states: Any, topk_indices: Any, topk_weights: Any) -> Any:
+        # Keep MoE accumulation dtype-aligned for Blackwell runtime stability.
+        final_hidden_states = torch.zeros_like(hidden_states, dtype=hidden_states.dtype)
+        expert_mask = torch.nn.functional.one_hot(topk_indices, num_classes=len(self.experts)).permute(2, 0, 1)
+
+        for expert_idx in range(len(self.experts)):
+            expert = self.experts[expert_idx]
+            mask = expert_mask[expert_idx]
+            token_indices, weight_indices = torch.where(mask)
+
+            if token_indices.numel() > 0:
+                expert_weights = topk_weights[token_indices, weight_indices].to(hidden_states.dtype)
+                expert_input = hidden_states[token_indices]
+                expert_output = expert(expert_input).to(hidden_states.dtype)
+                weighted_output = expert_output * expert_weights.unsqueeze(-1)
+                final_hidden_states.index_add_(0, token_indices, weighted_output.to(final_hidden_states.dtype))
+            else:
+                expert_dtype = expert.down_proj.weight.dtype
+                dummy_out = expert(torch.zeros_like(hidden_states[0]).unsqueeze(0).to(expert_dtype))
+                final_hidden_states = final_hidden_states + dummy_out.to(final_hidden_states.dtype)
+
+        return final_hidden_states.type(hidden_states.dtype)
+
     patched = False
     candidate_modules = {
         getattr(model.__class__, "__module__", ""),
@@ -248,6 +271,12 @@ def apply_nemotron_blackwell_compat_fallback(model: Any) -> bool:
         if hasattr(module, "causal_conv1d_update"):
             module.causal_conv1d_update = _causal_conv1d_update
             patched = True
+        if hasattr(module, "NemotronHMOE"):
+            try:
+                module.NemotronHMOE.moe = _patched_moe
+                patched = True
+            except Exception:
+                pass
 
     for loaded_module in list(sys.modules.values()):
         module_name = getattr(loaded_module, "__name__", "")
@@ -265,6 +294,12 @@ def apply_nemotron_blackwell_compat_fallback(model: Any) -> bool:
         if hasattr(loaded_module, "causal_conv1d_update"):
             setattr(loaded_module, "causal_conv1d_update", _causal_conv1d_update)
             patched = True
+        if hasattr(loaded_module, "NemotronHMOE"):
+            try:
+                loaded_module.NemotronHMOE.moe = _patched_moe
+                patched = True
+            except Exception:
+                pass
     return patched
 
 
