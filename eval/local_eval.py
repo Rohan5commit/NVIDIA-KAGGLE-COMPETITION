@@ -71,7 +71,7 @@ def evaluate_predictions(predictions: list[str], records: list[dict[str, Any]]) 
     return {"accuracy": accuracy, "results": results}
 
 
-def load_vllm(config: dict[str, Any], adapter_dir: str | None = None):
+def load_vllm(config: dict[str, Any]):
     from vllm import LLM
 
     model_id = resolve_model_id(config)
@@ -80,7 +80,7 @@ def load_vllm(config: dict[str, Any], adapter_dir: str | None = None):
         "trust_remote_code": config["model"]["trust_remote_code"],
         "max_model_len": config["evaluation"]["max_model_len"],
         "gpu_memory_utilization": config["evaluation"]["gpu_memory_utilization"],
-        "enable_lora": bool(adapter_dir),
+        "enable_lora": True,
     }
     return LLM(**kwargs)
 
@@ -101,12 +101,6 @@ def load_transformers_backend(config: dict[str, Any], adapter_dir: str | None = 
         model = PeftModel.from_pretrained(model, adapter_dir)
     model.eval()
     return model
-
-
-def load_backend(config: dict[str, Any], adapter_dir: str | None = None) -> dict[str, Any]:
-    if importlib.util.find_spec("vllm") is not None:
-        return {"kind": "vllm", "model": load_vllm(config, adapter_dir=adapter_dir)}
-    return {"kind": "transformers", "model": load_transformers_backend(config, adapter_dir=adapter_dir)}
 
 
 def maybe_lora_request(adapter_dir: str | None):
@@ -192,22 +186,24 @@ def main() -> None:
 
     results: dict[str, Any] = {"model_id": resolve_model_id(config), "records": len(validation_rows)}
     default_prompt = config["template"]["system_prompt"]
+    use_vllm_backend = importlib.util.find_spec("vllm") is not None
+    vllm_model = load_vllm(config) if use_vllm_backend else None
 
     for stage_name, adapter_dir in [("baseline", None), ("stage1_sft", stage1_dir), ("stage2_grpo", stage2_dir)]:
         adapter_path = adapter_dir if adapter_dir and Path(adapter_dir).exists() else None
-        backend = load_backend(config, adapter_dir=adapter_path)
         prompts = make_prompts(config, validation_rows, default_prompt, tokenizer=tokenizer)
-        if backend["kind"] == "vllm":
+        if use_vllm_backend:
             outputs = generate_texts(
-                backend["model"],
+                vllm_model,
                 prompts,
                 temperature=config["evaluation"]["deterministic_temperature"],
                 max_tokens=config["evaluation"]["deterministic_max_tokens"],
                 adapter_dir=adapter_path,
             )
         else:
+            stage_model = load_transformers_backend(config, adapter_dir=adapter_path)
             outputs = generate_with_transformers(
-                backend["model"],
+                stage_model,
                 tokenizer,
                 prompts,
                 temperature=config["evaluation"]["deterministic_temperature"],
@@ -217,13 +213,13 @@ def main() -> None:
 
     ablation_adapter = stage2_dir if Path(stage2_dir).exists() else stage1_dir if Path(stage1_dir).exists() else None
     ablation_adapter = ablation_adapter if Path(ablation_adapter or "").exists() else None
-    backend = load_backend(config, adapter_dir=ablation_adapter)
+    ablation_model = None if use_vllm_backend else load_transformers_backend(config, adapter_dir=ablation_adapter)
     ablation_scores = []
     for prompt in PROMPT_VARIANTS:
         prompts = make_prompts(config, validation_rows, prompt, tokenizer=tokenizer)
-        if backend["kind"] == "vllm":
+        if use_vllm_backend:
             outputs = generate_texts(
-                backend["model"],
+                vllm_model,
                 prompts,
                 temperature=config["evaluation"]["deterministic_temperature"],
                 max_tokens=config["evaluation"]["deterministic_max_tokens"],
@@ -231,7 +227,7 @@ def main() -> None:
             )
         else:
             outputs = generate_with_transformers(
-                backend["model"],
+                ablation_model,
                 tokenizer,
                 prompts,
                 temperature=config["evaluation"]["deterministic_temperature"],
@@ -243,11 +239,10 @@ def main() -> None:
     results["prompt_ablation"] = {"variants": ablation_scores, "best": best_variant}
 
     best_of_n_adapter = ablation_adapter
-    backend = load_backend(config, adapter_dir=best_of_n_adapter)
     prompts = make_prompts(config, validation_rows, best_variant["prompt"], tokenizer=tokenizer)
-    if backend["kind"] == "vllm":
+    if use_vllm_backend:
         candidates = generate_texts(
-            backend["model"],
+            vllm_model,
             prompts,
             temperature=config["evaluation"]["best_of_n_temperature"],
             max_tokens=config["evaluation"]["deterministic_max_tokens"],
@@ -256,7 +251,7 @@ def main() -> None:
         )
     else:
         candidates = generate_with_transformers(
-            backend["model"],
+            ablation_model,
             tokenizer,
             prompts,
             temperature=config["evaluation"]["best_of_n_temperature"],
