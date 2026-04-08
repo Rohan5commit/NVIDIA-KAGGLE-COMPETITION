@@ -1,440 +1,444 @@
 {
-  "raw_records": 1474,
-  "deduped_records": 262,
-  "top_quality_records": 182,
-  "final_selected_records": 182,
-  "train_records": 165,
-  "validation_records": 17,
-  "grpo_records": 165,
-  "synthetic_seed_candidates": 165,
+  "raw_records": 14817,
+  "deduped_records": 6272,
+  "top_quality_records": 4389,
+  "final_selected_records": 4389,
+  "train_records": 3666,
+  "validation_records": 723,
+  "grpo_records": 3510,
+  "synthetic_seed_candidates": 2000,
   "invalid_reasons": {
-    "length_filter": 1059,
-    "unclean_answer": 106,
-    "incorrect_answer": 41
+    "length_filter": 7604,
+    "unclean_answer": 882,
+    "incorrect_answer": 20
   },
   "selected_by_bucket": {
-    "hard": 179,
-    "medium": 3
+    "easy": 331,
+    "hard": 3861,
+    "medium": 197
   },
   "train_by_source": {
-    "math": 35,
-    "numina_h4": 45,
-    "open_math_reasoning": 24,
-    "hendrycks_math": 9,
-    "numina_cot": 52
+    "gsm8k": 156,
+    "numina_cot": 3126,
+    "numina_h4": 67,
+    "math": 270,
+    "hendrycks_math": 44,
+    "open_math_reasoning": 3
   },
   "validation_by_source": {
-    "math": 7,
-    "numina_h4": 1,
-    "numina_cot": 5,
-    "hendrycks_math": 4
+    "gsm8k": 175,
+    "numina_h4": 14,
+    "numina_cot": 292,
+    "math": 225,
+    "hendrycks_math": 16,
+    "open_math_reasoning": 1
   },
   "quality_histogram_before": [
     {
       "bin_start": 0.0,
+      "bin_end": 0.025,
+      "count": 14632.0
+    },
+    {
+      "bin_start": 0.025,
       "bin_end": 0.05,
-      "count": 1332.0
+      "count": 100.0
     },
     {
       "bin_start": 0.05,
+      "bin_end": 0.07500000000000001,
+      "count": 13.0
+    },
+    {
+      "bin_start": 0.07500000000000001,
       "bin_end": 0.1,
-      "count": 53.0
+      "count": 1.0
     },
     {
       "bin_start": 0.1,
-      "bin_end": 0.15000000000000002,
-      "count": 15.0
+      "bin_end": 0.125,
+      "count": 2.0
+    },
+    {
+      "bin_start": 0.125,
+      "bin_end": 0.15,
+      "count": 1.0
     },
     {
       "bin_start": 0.15000000000000002,
+      "bin_end": 0.17500000000000002,
+      "count": 1.0
+    },
+    {
+      "bin_start": 0.17500000000000002,
       "bin_end": 0.2,
       "count": 0.0
     },
     {
       "bin_start": 0.2,
-      "bin_end": 0.25,
+      "bin_end": 0.225,
       "count": 1.0
     },
     {
+      "bin_start": 0.225,
+      "bin_end": 0.25,
+      "count": 0.0
+    },
+    {
       "bin_start": 0.25,
-      "bin_end": 0.3,
+      "bin_end": 0.275,
+      "count": 2.0
+    },
+    {
+      "bin_start": 0.275,
+      "bin_end": 0.30000000000000004,
       "count": 0.0
     },
     {
       "bin_start": 0.30000000000000004,
+      "bin_end": 0.32500000000000007,
+      "count": 0.0
+    },
+    {
+      "bin_start": 0.325,
       "bin_end": 0.35000000000000003,
       "count": 2.0
     },
     {
       "bin_start": 0.35000000000000003,
+      "bin_end": 0.37500000000000006,
+      "count": 0.0
+    },
+    {
+      "bin_start": 0.375,
       "bin_end": 0.4,
       "count": 0.0
     },
     {
       "bin_start": 0.4,
-      "bin_end": 0.45,
+      "bin_end": 0.42500000000000004,
+      "count": 0.0
+    },
+    {
+      "bin_start": 0.42500000000000004,
+      "bin_end": 0.45000000000000007,
       "count": 0.0
     },
     {
       "bin_start": 0.45,
+      "bin_end": 0.47500000000000003,
+      "count": 0.0
+    },
+    {
+      "bin_start": 0.47500000000000003,
       "bin_end": 0.5,
-      "count": 0.0
-    },
-    {
-      "bin_start": 0.5,
-      "bin_end": 0.55,
-      "count": 4.0
-    },
-    {
-      "bin_start": 0.55,
-      "bin_end": 0.6000000000000001,
-      "count": 0.0
-    },
-    {
-      "bin_start": 0.6000000000000001,
-      "bin_end": 0.6500000000000001,
-      "count": 0.0
-    },
-    {
-      "bin_start": 0.65,
-      "bin_end": 0.7000000000000001,
-      "count": 0.0
-    },
-    {
-      "bin_start": 0.7000000000000001,
-      "bin_end": 0.7500000000000001,
-      "count": 0.0
-    },
-    {
-      "bin_start": 0.75,
-      "bin_end": 0.8,
-      "count": 0.0
-    },
-    {
-      "bin_start": 0.8,
-      "bin_end": 0.8500000000000001,
-      "count": 0.0
-    },
-    {
-      "bin_start": 0.8500000000000001,
-      "bin_end": 0.9000000000000001,
-      "count": 0.0
-    },
-    {
-      "bin_start": 0.9,
-      "bin_end": 0.9500000000000001,
-      "count": 0.0
-    },
-    {
-      "bin_start": 0.9500000000000001,
-      "bin_end": 1.0,
-      "count": 67.0
+      "count": 62.0
     }
   ],
   "quality_histogram_after": [
     {
-      "bin_start": 0.002457002457002457,
-      "bin_end": 0.002584152334152334,
-      "count": 17.0
+      "bin_start": 0.0019047619047619048,
+      "bin_end": 0.0020595238095238097,
+      "count": 291.0
     },
     {
-      "bin_start": 0.002584152334152334,
-      "bin_end": 0.002711302211302211,
-      "count": 11.0
+      "bin_start": 0.0020595238095238097,
+      "bin_end": 0.0022142857142857146,
+      "count": 264.0
     },
     {
-      "bin_start": 0.0027113022113022115,
-      "bin_end": 0.0028384520884520885,
-      "count": 7.0
+      "bin_start": 0.002214285714285714,
+      "bin_end": 0.002369047619047619,
+      "count": 265.0
     },
     {
-      "bin_start": 0.0028384520884520885,
-      "bin_end": 0.0029656019656019656,
-      "count": 9.0
+      "bin_start": 0.002369047619047619,
+      "bin_end": 0.002523809523809524,
+      "count": 262.0
     },
     {
-      "bin_start": 0.0029656019656019656,
-      "bin_end": 0.0030927518427518426,
-      "count": 2.0
+      "bin_start": 0.0025238095238095237,
+      "bin_end": 0.0026785714285714286,
+      "count": 276.0
     },
     {
-      "bin_start": 0.0030927518427518426,
-      "bin_end": 0.0032199017199017197,
-      "count": 6.0
+      "bin_start": 0.0026785714285714286,
+      "bin_end": 0.0028333333333333335,
+      "count": 283.0
     },
     {
-      "bin_start": 0.0032199017199017197,
-      "bin_end": 0.0033470515970515967,
-      "count": 9.0
+      "bin_start": 0.0028333333333333335,
+      "bin_end": 0.0029880952380952385,
+      "count": 245.0
     },
     {
-      "bin_start": 0.003347051597051597,
-      "bin_end": 0.003474201474201474,
-      "count": 8.0
+      "bin_start": 0.0029880952380952385,
+      "bin_end": 0.0031428571428571434,
+      "count": 243.0
     },
     {
-      "bin_start": 0.003474201474201474,
-      "bin_end": 0.0036013513513513513,
-      "count": 10.0
+      "bin_start": 0.003142857142857143,
+      "bin_end": 0.003297619047619048,
+      "count": 238.0
     },
     {
-      "bin_start": 0.0036013513513513513,
-      "bin_end": 0.0037285012285012283,
-      "count": 8.0
+      "bin_start": 0.0032976190476190475,
+      "bin_end": 0.0034523809523809524,
+      "count": 196.0
     },
     {
-      "bin_start": 0.0037285012285012287,
-      "bin_end": 0.003855651105651106,
-      "count": 7.0
+      "bin_start": 0.0034523809523809524,
+      "bin_end": 0.0036071428571428574,
+      "count": 170.0
     },
     {
-      "bin_start": 0.003855651105651106,
-      "bin_end": 0.003982800982800983,
-      "count": 10.0
+      "bin_start": 0.0036071428571428574,
+      "bin_end": 0.0037619047619047623,
+      "count": 200.0
     },
     {
-      "bin_start": 0.003982800982800983,
-      "bin_end": 0.00410995085995086,
-      "count": 14.0
+      "bin_start": 0.0037619047619047623,
+      "bin_end": 0.003916666666666667,
+      "count": 164.0
     },
     {
-      "bin_start": 0.00410995085995086,
-      "bin_end": 0.004237100737100737,
-      "count": 8.0
+      "bin_start": 0.003916666666666667,
+      "bin_end": 0.004071428571428572,
+      "count": 170.0
     },
     {
-      "bin_start": 0.004237100737100737,
-      "bin_end": 0.004364250614250614,
-      "count": 7.0
+      "bin_start": 0.004071428571428571,
+      "bin_end": 0.004226190476190476,
+      "count": 204.0
     },
     {
-      "bin_start": 0.004364250614250614,
-      "bin_end": 0.004491400491400491,
-      "count": 9.0
+      "bin_start": 0.004226190476190476,
+      "bin_end": 0.004380952380952381,
+      "count": 188.0
     },
     {
-      "bin_start": 0.004491400491400491,
-      "bin_end": 0.004618550368550368,
-      "count": 11.0
+      "bin_start": 0.004380952380952381,
+      "bin_end": 0.004535714285714286,
+      "count": 178.0
     },
     {
-      "bin_start": 0.004618550368550368,
-      "bin_end": 0.004745700245700245,
-      "count": 9.0
+      "bin_start": 0.004535714285714286,
+      "bin_end": 0.004690476190476191,
+      "count": 181.0
     },
     {
-      "bin_start": 0.004745700245700245,
-      "bin_end": 0.004872850122850122,
-      "count": 7.0
+      "bin_start": 0.004690476190476191,
+      "bin_end": 0.004845238095238096,
+      "count": 173.0
     },
     {
-      "bin_start": 0.004872850122850123,
+      "bin_start": 0.004845238095238095,
       "bin_end": 0.005,
-      "count": 13.0
+      "count": 198.0
     }
   ],
   "reasoning_length_histogram_before": [
     {
-      "bin_start": 1.0,
-      "bin_end": 517.35,
-      "count": 1315.0
+      "bin_start": 2.0,
+      "bin_end": 933.15,
+      "count": 14293.0
     },
     {
-      "bin_start": 517.35,
-      "bin_end": 1033.7,
-      "count": 41.0
+      "bin_start": 933.15,
+      "bin_end": 1864.3,
+      "count": 396.0
     },
     {
-      "bin_start": 1033.7,
-      "bin_end": 1550.0500000000002,
+      "bin_start": 1864.3,
+      "bin_end": 2795.45,
+      "count": 21.0
+    },
+    {
+      "bin_start": 2795.45,
+      "bin_end": 3726.6,
+      "count": 11.0
+    },
+    {
+      "bin_start": 3726.6,
+      "bin_end": 4657.75,
       "count": 12.0
     },
     {
-      "bin_start": 1550.0500000000002,
-      "bin_end": 2066.4,
-      "count": 19.0
+      "bin_start": 4657.75,
+      "bin_end": 5588.9,
+      "count": 18.0
     },
     {
-      "bin_start": 2066.4,
-      "bin_end": 2582.75,
-      "count": 14.0
-    },
-    {
-      "bin_start": 2582.75,
-      "bin_end": 3099.1,
-      "count": 9.0
-    },
-    {
-      "bin_start": 3099.1000000000004,
-      "bin_end": 3615.4500000000003,
-      "count": 14.0
-    },
-    {
-      "bin_start": 3615.4500000000003,
-      "bin_end": 4131.8,
+      "bin_start": 5588.9,
+      "bin_end": 6520.049999999999,
       "count": 10.0
     },
     {
-      "bin_start": 4131.8,
-      "bin_end": 4648.150000000001,
-      "count": 6.0
-    },
-    {
-      "bin_start": 4648.150000000001,
-      "bin_end": 5164.500000000001,
-      "count": 7.0
-    },
-    {
-      "bin_start": 5164.5,
-      "bin_end": 5680.85,
-      "count": 4.0
-    },
-    {
-      "bin_start": 5680.85,
-      "bin_end": 6197.200000000001,
-      "count": 4.0
-    },
-    {
-      "bin_start": 6197.200000000001,
-      "bin_end": 6713.550000000001,
-      "count": 4.0
-    },
-    {
-      "bin_start": 6713.55,
-      "bin_end": 7229.900000000001,
-      "count": 3.0
-    },
-    {
-      "bin_start": 7229.900000000001,
-      "bin_end": 7746.250000000001,
-      "count": 3.0
-    },
-    {
-      "bin_start": 7746.25,
-      "bin_end": 8262.6,
-      "count": 2.0
-    },
-    {
-      "bin_start": 8262.6,
-      "bin_end": 8778.95,
-      "count": 0.0
-    },
-    {
-      "bin_start": 8778.95,
-      "bin_end": 9295.300000000001,
+      "bin_start": 6520.05,
+      "bin_end": 7451.2,
       "count": 5.0
     },
     {
-      "bin_start": 9295.300000000001,
-      "bin_end": 9811.650000000001,
-      "count": 0.0
+      "bin_start": 7451.2,
+      "bin_end": 8382.35,
+      "count": 13.0
     },
     {
-      "bin_start": 9811.65,
-      "bin_end": 10328.0,
+      "bin_start": 8382.35,
+      "bin_end": 9313.5,
+      "count": 6.0
+    },
+    {
+      "bin_start": 9313.5,
+      "bin_end": 10244.65,
+      "count": 5.0
+    },
+    {
+      "bin_start": 10244.65,
+      "bin_end": 11175.8,
+      "count": 4.0
+    },
+    {
+      "bin_start": 11175.8,
+      "bin_end": 12106.949999999999,
       "count": 2.0
+    },
+    {
+      "bin_start": 12106.949999999999,
+      "bin_end": 13038.099999999999,
+      "count": 5.0
+    },
+    {
+      "bin_start": 13038.1,
+      "bin_end": 13969.25,
+      "count": 5.0
+    },
+    {
+      "bin_start": 13969.25,
+      "bin_end": 14900.4,
+      "count": 2.0
+    },
+    {
+      "bin_start": 14900.4,
+      "bin_end": 15831.55,
+      "count": 3.0
+    },
+    {
+      "bin_start": 15831.55,
+      "bin_end": 16762.7,
+      "count": 2.0
+    },
+    {
+      "bin_start": 16762.7,
+      "bin_end": 17693.850000000002,
+      "count": 1.0
+    },
+    {
+      "bin_start": 17693.85,
+      "bin_end": 18625.0,
+      "count": 3.0
     }
   ],
   "reasoning_length_histogram_after": [
     {
       "bin_start": 200.0,
-      "bin_end": 210.35,
-      "count": 20.0
+      "bin_end": 216.25,
+      "count": 446.0
     },
     {
-      "bin_start": 210.35,
-      "bin_end": 220.7,
-      "count": 19.0
+      "bin_start": 216.25,
+      "bin_end": 232.5,
+      "count": 384.0
     },
     {
-      "bin_start": 220.7,
-      "bin_end": 231.04999999999998,
-      "count": 10.0
+      "bin_start": 232.5,
+      "bin_end": 248.75,
+      "count": 358.0
     },
     {
-      "bin_start": 231.05,
-      "bin_end": 241.4,
-      "count": 14.0
+      "bin_start": 248.75,
+      "bin_end": 265.0,
+      "count": 247.0
     },
     {
-      "bin_start": 241.4,
-      "bin_end": 251.75,
-      "count": 15.0
+      "bin_start": 265.0,
+      "bin_end": 281.25,
+      "count": 267.0
     },
     {
-      "bin_start": 251.75,
-      "bin_end": 262.1,
-      "count": 13.0
+      "bin_start": 281.25,
+      "bin_end": 297.5,
+      "count": 225.0
     },
     {
-      "bin_start": 262.1,
-      "bin_end": 272.45000000000005,
-      "count": 6.0
+      "bin_start": 297.5,
+      "bin_end": 313.75,
+      "count": 254.0
     },
     {
-      "bin_start": 272.45,
-      "bin_end": 282.8,
-      "count": 11.0
+      "bin_start": 313.75,
+      "bin_end": 330.0,
+      "count": 245.0
     },
     {
-      "bin_start": 282.8,
-      "bin_end": 293.15000000000003,
-      "count": 11.0
+      "bin_start": 330.0,
+      "bin_end": 346.25,
+      "count": 236.0
     },
     {
-      "bin_start": 293.15,
-      "bin_end": 303.5,
-      "count": 8.0
+      "bin_start": 346.25,
+      "bin_end": 362.5,
+      "count": 227.0
     },
     {
-      "bin_start": 303.5,
-      "bin_end": 313.85,
-      "count": 4.0
+      "bin_start": 362.5,
+      "bin_end": 378.75,
+      "count": 206.0
     },
     {
-      "bin_start": 313.85,
-      "bin_end": 324.20000000000005,
-      "count": 5.0
+      "bin_start": 378.75,
+      "bin_end": 395.0,
+      "count": 195.0
     },
     {
-      "bin_start": 324.2,
-      "bin_end": 334.55,
-      "count": 1.0
+      "bin_start": 395.0,
+      "bin_end": 411.25,
+      "count": 180.0
     },
     {
-      "bin_start": 334.54999999999995,
-      "bin_end": 344.9,
-      "count": 6.0
+      "bin_start": 411.25,
+      "bin_end": 427.5,
+      "count": 150.0
     },
     {
-      "bin_start": 344.9,
-      "bin_end": 355.25,
-      "count": 5.0
+      "bin_start": 427.5,
+      "bin_end": 443.75,
+      "count": 150.0
     },
     {
-      "bin_start": 355.25,
-      "bin_end": 365.6,
-      "count": 6.0
+      "bin_start": 443.75,
+      "bin_end": 460.0,
+      "count": 121.0
     },
     {
-      "bin_start": 365.6,
-      "bin_end": 375.95000000000005,
-      "count": 5.0
+      "bin_start": 460.0,
+      "bin_end": 476.25,
+      "count": 148.0
     },
     {
-      "bin_start": 375.95,
-      "bin_end": 386.3,
-      "count": 6.0
+      "bin_start": 476.25,
+      "bin_end": 492.5,
+      "count": 106.0
     },
     {
-      "bin_start": 386.29999999999995,
-      "bin_end": 396.65,
-      "count": 10.0
+      "bin_start": 492.5,
+      "bin_end": 508.75,
+      "count": 122.0
     },
     {
-      "bin_start": 396.65,
-      "bin_end": 407.0,
-      "count": 7.0
+      "bin_start": 508.75,
+      "bin_end": 525.0,
+      "count": 122.0
     }
   ]
 }

@@ -9,12 +9,25 @@ model:
   canonical_model_id: nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16
   canonical_base_model_id: nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-Base-BF16
   use_canonical_hf_id_by_default: true
+  local_model_path: ""
+  local_base_model_path: ""
+  kaggle_model_mounts:
+    - /kaggle/input/models/metric/nemotron-3-nano-30b-a3b-bf16/transformers/default/1
   trust_remote_code: true
   attn_implementation: flash_attention_2
   load_in_4bit: true
   max_seq_length: 8192
   gpu_memory_utilization: 0.92
   max_model_len: 8192
+
+runtime:
+  offline_wheel_dirs:
+    - /kaggle/input/nvidia-nemotron-offline-packages/offline_packages
+    - /kaggle/input/ai-mathematical-olympiad/wheels
+    - /kaggle/input/vllm-offline-wheels/wheels
+  python_source_dirs:
+    - /kaggle/input/trl-package
+    - /kaggle/input/trl-package/trl-package
 
 template:
   mode: official

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import importlib.util
 import sys
 import zipfile
 from pathlib import Path
@@ -10,7 +11,15 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from common import TARGET_MODULES, extract_boxed_answer, load_config, render_generation_prompt, resolve_model_id
+from common import (
+    TARGET_MODULES,
+    bootstrap_optional_python_paths,
+    extract_boxed_answer,
+    load_config,
+    render_generation_prompt,
+    resolve_attn_implementation,
+    resolve_model_id,
+)
 
 
 TEST_PROBLEMS = [
@@ -46,6 +55,27 @@ def verify_adapter_config(config: dict, adapter_config: dict) -> None:
         raise ValueError("target_modules do not match the required Nemotron setup.")
 
 
+def normalize_adapter_config(repo_config: dict, adapter_config_path: Path) -> dict:
+    with adapter_config_path.open("r", encoding="utf-8") as handle:
+        adapter_config = json.load(handle)
+
+    expected_base_ids = {
+        repo_config["model"]["requested_model_id"],
+        repo_config["model"]["canonical_model_id"],
+        resolve_model_id(repo_config),
+    }
+    base_model_name = str(adapter_config.get("base_model_name_or_path", "")).strip()
+    if not base_model_name:
+        raise ValueError("adapter_config.json is missing base_model_name_or_path.")
+    if base_model_name not in expected_base_ids and not Path(base_model_name).exists():
+        raise ValueError(f"Unexpected base_model_name_or_path in adapter_config.json: {base_model_name}")
+    if base_model_name != repo_config["model"]["requested_model_id"]:
+        adapter_config["base_model_name_or_path"] = repo_config["model"]["requested_model_id"]
+        with adapter_config_path.open("w", encoding="utf-8") as handle:
+            json.dump(adapter_config, handle, indent=2, ensure_ascii=False)
+    return adapter_config
+
+
 def verify_adapter_only(adapter_weights: Path) -> None:
     from safetensors import safe_open
 
@@ -60,8 +90,6 @@ def verify_adapter_only(adapter_weights: Path) -> None:
 
 def run_sanity_check(repo_config: dict, adapter_dir: Path) -> None:
     from transformers import AutoTokenizer
-    from vllm import LLM, SamplingParams
-    from vllm.lora.request import LoRARequest
 
     tokenizer = AutoTokenizer.from_pretrained(
         resolve_model_id(repo_config),
@@ -76,19 +104,50 @@ def run_sanity_check(repo_config: dict, adapter_dir: Path) -> None:
         )
         for problem in TEST_PROBLEMS
     ]
-    llm = LLM(
-        model=resolve_model_id(repo_config),
-        trust_remote_code=repo_config["model"]["trust_remote_code"],
-        enable_lora=True,
-        gpu_memory_utilization=repo_config["evaluation"]["gpu_memory_utilization"],
-        max_model_len=repo_config["evaluation"]["max_model_len"],
-    )
-    outputs = llm.generate(
-        prompts,
-        SamplingParams(temperature=0.0, max_tokens=512),
-        lora_request=LoRARequest("submission", 1, str(adapter_dir)),
-    )
-    texts = [output.outputs[0].text for output in outputs]
+    if importlib.util.find_spec("vllm") is not None:
+        from vllm import LLM, SamplingParams
+        from vllm.lora.request import LoRARequest
+
+        llm = LLM(
+            model=resolve_model_id(repo_config),
+            trust_remote_code=repo_config["model"]["trust_remote_code"],
+            enable_lora=True,
+            gpu_memory_utilization=repo_config["evaluation"]["gpu_memory_utilization"],
+            max_model_len=repo_config["evaluation"]["max_model_len"],
+        )
+        outputs = llm.generate(
+            prompts,
+            SamplingParams(temperature=0.0, max_tokens=512),
+            lora_request=LoRARequest("submission", 1, str(adapter_dir)),
+        )
+        texts = [output.outputs[0].text for output in outputs]
+    else:
+        import torch
+        from peft import PeftModel
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+
+        base_model = AutoModelForCausalLM.from_pretrained(
+            resolve_model_id(repo_config),
+            torch_dtype=torch.bfloat16,
+            device_map="auto",
+            trust_remote_code=repo_config["model"]["trust_remote_code"],
+            attn_implementation=resolve_attn_implementation(repo_config["model"]["attn_implementation"]),
+        )
+        model = PeftModel.from_pretrained(base_model, str(adapter_dir))
+        model.eval()
+        texts = []
+        for prompt in prompts:
+            encoded = tokenizer(prompt, return_tensors="pt").to(model.device)
+            with torch.no_grad():
+                generated = model.generate(
+                    **encoded,
+                    max_new_tokens=512,
+                    do_sample=False,
+                    pad_token_id=tokenizer.pad_token_id,
+                    eos_token_id=tokenizer.eos_token_id,
+                )
+            prompt_length = encoded["input_ids"].shape[-1]
+            texts.append(tokenizer.decode(generated[0, prompt_length:], skip_special_tokens=True))
     if not all("\\boxed{" in text and extract_boxed_answer(text) for text in texts):
         raise ValueError("Sanity check failed: not all vLLM generations contained a boxed answer.")
 
@@ -96,6 +155,7 @@ def run_sanity_check(repo_config: dict, adapter_dir: Path) -> None:
 def main() -> None:
     args = parse_args()
     repo_config = load_config(args.config)
+    bootstrap_optional_python_paths(repo_config)
     adapter_dir = Path(args.adapter_dir or repo_config["paths"]["stage2_output_dir"])
     output_zip = Path(args.output_zip or (Path(repo_config["paths"]["submission_dir"]) / repo_config["submission"]["zip_name"]))
     output_zip.parent.mkdir(parents=True, exist_ok=True)
@@ -105,8 +165,7 @@ def main() -> None:
     if not adapter_config_path.exists() or not adapter_weights_path.exists():
         raise FileNotFoundError("Expected adapter_config.json and adapter_model.safetensors in the adapter directory.")
 
-    with adapter_config_path.open("r", encoding="utf-8") as handle:
-        adapter_config = json.load(handle)
+    adapter_config = normalize_adapter_config(repo_config, adapter_config_path)
     verify_adapter_config(repo_config, adapter_config)
     verify_adapter_only(adapter_weights_path)
     run_sanity_check(repo_config, adapter_dir)

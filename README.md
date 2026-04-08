@@ -12,8 +12,11 @@ As of April 8, 2026:
 - Data, SFT, GRPO, evaluation, and packaging code: implemented.
 - Smoke-run data download: completed across all six logical sources with 1,474 normalized records.
 - Smoke-run curation: completed with 182 selected records, 165 train rows, 17 validation rows, and 165 hard rows.
+- Larger local curation pass: completed on 14,817 normalized rows with 4,389 selected records, 3,666 SFT train rows, 723 validation rows, 3,510 GRPO rows, and 2,000 synthetic seed candidates.
 - Local GPU execution: not available in this environment.
 - Kaggle remote bootstrap execution: attempted from the repo on the live RTX session, but blocked by DNS resolution failures to external hosts from inside the Kaggle runtime.
+- Kaggle runtime asset bundle: staged locally as `artifacts/kaggle_runtime_assets/` with a repo tarball plus offline wheels for `bitsandbytes`, `trl`, `flash_attn`, `causal_conv1d`, and `mamba_ssm`.
+- Kaggle trainer kernel source: added at `kaggle/runtime_kernel/` for a push-based competition run that mounts the asset dataset, competition data, and the Nemotron model.
 - Final validation accuracy after SFT: not run in this environment.
 - Final validation accuracy after GRPO: not run in this environment.
 - `submission.zip`: not produced in this environment.
@@ -27,6 +30,9 @@ The repository now includes Kaggle-specific helper scripts to drive the competit
 - `training/kaggle_probe.py`
 - `training/kaggle_start_bootstrap.py`
 - `training/kaggle_start_pipeline.py`
+- `training/kaggle_kernel_entry.py`
+- `training/build_kaggle_runtime_assets.py`
+- `kaggle/runtime_kernel/run_pipeline_kernel.py`
 
 Observed behavior on April 8, 2026:
 
@@ -111,6 +117,16 @@ Smoke-run curation output:
 | validation.jsonl | 17 |
 | train_grpo.jsonl | 165 |
 | synthetic_seed_candidates.jsonl | 165 |
+
+Larger local curation output currently staged into the Kaggle asset bundle:
+
+| artifact | rows |
+|---|---:|
+| curated_full.jsonl | 4,389 |
+| train_sft.jsonl | 3,666 |
+| validation.jsonl | 723 |
+| train_grpo.jsonl | 3,510 |
+| synthetic_seed_candidates.jsonl | 2,000 |
 
 ## Training Plan
 

@@ -11,11 +11,13 @@ if str(ROOT) not in sys.path:
 
 from common import (
     TARGET_MODULES,
+    bootstrap_optional_python_paths,
     build_generation_config,
     load_config,
     maybe_seed,
     read_jsonl,
     render_training_example,
+    resolve_attn_implementation,
     resolve_model_id,
     save_json,
 )
@@ -109,7 +111,7 @@ def run_unsloth(config: dict[str, Any], dataset, tokenizer, output_dir: str):
         dtype=torch.bfloat16,
         load_in_4bit=stage_config["load_in_4bit"],
         trust_remote_code=config["model"]["trust_remote_code"],
-        attn_implementation=stage_config["attn_implementation"],
+        attn_implementation=resolve_attn_implementation(stage_config["attn_implementation"]),
     )
     model = FastLanguageModel.get_peft_model(
         model,
@@ -158,7 +160,7 @@ def run_fallback(config: dict[str, Any], dataset, tokenizer, output_dir: str):
         torch_dtype=torch.bfloat16,
         device_map="auto",
         trust_remote_code=config["model"]["trust_remote_code"],
-        attn_implementation=stage_config["attn_implementation"],
+        attn_implementation=resolve_attn_implementation(stage_config["attn_implementation"]),
     )
     model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=stage_config["gradient_checkpointing"])
     peft_config = LoraConfig(
@@ -189,6 +191,7 @@ def run_fallback(config: dict[str, Any], dataset, tokenizer, output_dir: str):
 def main() -> None:
     args = parse_args()
     config = load_config(args.config)
+    bootstrap_optional_python_paths(config)
     maybe_seed(int(config["project"]["seed"]))
     output_dir = args.output_dir or config["paths"]["stage1_output_dir"]
     system_prompt = config["template"]["system_prompt"]

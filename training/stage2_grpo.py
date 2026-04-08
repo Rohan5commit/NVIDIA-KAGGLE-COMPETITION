@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import inspect
 import sys
 from pathlib import Path
@@ -12,6 +13,7 @@ if str(ROOT) not in sys.path:
 
 from common import (
     answers_match,
+    bootstrap_optional_python_paths,
     build_generation_config,
     extract_boxed_answer,
     extract_thinking_section,
@@ -19,6 +21,7 @@ from common import (
     maybe_seed,
     read_jsonl,
     render_generation_prompt,
+    resolve_attn_implementation,
     resolve_model_id,
     save_json,
     token_count,
@@ -38,6 +41,7 @@ def grpo_args(config: dict[str, Any], output_dir: str):
     from trl import GRPOConfig
 
     stage_config = config["stage2_grpo"]
+    use_vllm = stage_config["use_vllm"] and importlib.util.find_spec("vllm") is not None
     return build_generation_config(
         GRPOConfig,
         output_dir=output_dir,
@@ -51,7 +55,7 @@ def grpo_args(config: dict[str, Any], output_dir: str):
         max_prompt_length=stage_config["max_prompt_length"],
         max_completion_length=stage_config["max_completion_length"],
         temperature=stage_config["temperature"],
-        use_vllm=stage_config["use_vllm"],
+        use_vllm=use_vllm,
         vllm_mode=stage_config["vllm_mode"],
         vllm_gpu_memory_utilization=stage_config["vllm_gpu_memory_utilization"],
         offload_optimizer=stage_config["offload_optimizer"],
@@ -111,7 +115,7 @@ def load_stage1_model(config: dict[str, Any], stage1_dir: str):
         torch_dtype=torch.bfloat16,
         device_map="auto",
         trust_remote_code=config["model"]["trust_remote_code"],
-        attn_implementation=config["model"]["attn_implementation"],
+        attn_implementation=resolve_attn_implementation(config["model"]["attn_implementation"]),
     )
     return PeftModel.from_pretrained(base_model, stage1_dir, is_trainable=True)
 
@@ -167,6 +171,7 @@ def reward_no_answer_leakage(completions, ground_truth, **kwargs) -> list[float]
 def main() -> None:
     args = parse_args()
     config = load_config(args.config)
+    bootstrap_optional_python_paths(config)
     maybe_seed(int(config["project"]["seed"]))
     stage1_dir = args.stage1_dir or config["paths"]["stage1_output_dir"]
     output_dir = args.output_dir or config["paths"]["stage2_output_dir"]

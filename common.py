@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import importlib.util
 import inspect
 import json
 import math
 import os
 import random
 import re
+import sys
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
@@ -29,6 +31,24 @@ TRAILING_ANSWER_PREFIX = re.compile(
     r"^(the final answer is|the answer is|answer\s*:|final answer\s*:|so,?|thus,?)\s*",
     re.IGNORECASE,
 )
+DEFAULT_KAGGLE_MODEL_DIRS = [
+    "/kaggle/input/models/metric/nemotron-3-nano-30b-a3b-bf16/transformers/default/1",
+    "/kaggle/input/nemotron-3-nano-30b-a3b-bf16",
+]
+DEFAULT_KAGGLE_WHEEL_DIRS = [
+    "/kaggle/working/offline_wheels",
+    "/kaggle/input/nemotron-runtime-assets/offline_wheels",
+    "/kaggle/input/nvidia-nemotron-offline-packages/offline_packages",
+    "/kaggle/input/ai-mathematical-olympiad/wheels",
+    "/kaggle/input/vllm-offline-wheels/wheels",
+]
+DEFAULT_KAGGLE_SOURCE_DIRS = [
+    "/kaggle/working/offline_src",
+    "/kaggle/input/nemotron-runtime-assets/offline_src",
+    "/kaggle/working/trl-package",
+    "/kaggle/input/trl-package",
+    "/kaggle/input/trl-package/trl-package",
+]
 
 
 def ensure_dir(path: str | Path) -> Path:
@@ -46,6 +66,86 @@ def load_yaml(path: str | Path) -> dict[str, Any]:
 
 def load_config(config_path: str | Path | None = None) -> dict[str, Any]:
     return load_yaml(config_path or ROOT / "training" / "train_config.yaml")
+
+
+def split_env_paths(value: str | None) -> list[Path]:
+    if not value:
+        return []
+    return [Path(part).expanduser() for part in value.split(os.pathsep) if part.strip()]
+
+
+def existing_paths(paths: Sequence[str | Path]) -> list[Path]:
+    resolved: list[Path] = []
+    for item in paths:
+        candidate = Path(item).expanduser()
+        if candidate.exists():
+            resolved.append(candidate)
+    return resolved
+
+
+def discover_local_model_path(config: Mapping[str, Any], prefer_base_model: bool = False) -> Path | None:
+    env_name = "NEMOTRON_BASE_MODEL_PATH" if prefer_base_model else "NEMOTRON_MODEL_PATH"
+    env_path = os.environ.get(env_name)
+    if env_path and Path(env_path).expanduser().exists():
+        return Path(env_path).expanduser()
+
+    model_config = config.get("model", {})
+    config_key = "local_base_model_path" if prefer_base_model else "local_model_path"
+    configured = model_config.get(config_key)
+    if configured and Path(configured).expanduser().exists():
+        return Path(configured).expanduser()
+
+    if prefer_base_model:
+        return None
+
+    kaggle_paths = model_config.get("kaggle_model_mounts", DEFAULT_KAGGLE_MODEL_DIRS)
+    for path in existing_paths(kaggle_paths):
+        return path
+    return None
+
+
+def discover_offline_wheel_dirs(config: Mapping[str, Any] | None = None) -> list[Path]:
+    configured = []
+    if config:
+        configured = list(config.get("runtime", {}).get("offline_wheel_dirs", []))
+    env_paths = split_env_paths(os.environ.get("NEMOTRON_OFFLINE_WHEEL_DIRS"))
+    return existing_paths([*env_paths, *configured, *DEFAULT_KAGGLE_WHEEL_DIRS])
+
+
+def discover_optional_source_dirs(config: Mapping[str, Any] | None = None) -> list[Path]:
+    configured = []
+    if config:
+        configured = list(config.get("runtime", {}).get("python_source_dirs", []))
+    env_paths = split_env_paths(os.environ.get("NEMOTRON_EXTRA_PYTHONPATHS"))
+    candidates = [*env_paths, *configured, *DEFAULT_KAGGLE_SOURCE_DIRS]
+    return existing_paths(candidates)
+
+
+def bootstrap_optional_python_paths(config: Mapping[str, Any] | None = None) -> list[str]:
+    added: list[str] = []
+    for path in discover_optional_source_dirs(config):
+        for candidate in [path, *path.iterdir()] if path.is_dir() else [path]:
+            if not candidate.is_dir():
+                continue
+            if (candidate / "trl").exists() or (candidate / "vllm").exists():
+                path_text = str(candidate)
+                if path_text not in sys.path:
+                    sys.path.insert(0, path_text)
+                    added.append(path_text)
+                break
+    return added
+
+
+def module_available(module_name: str) -> bool:
+    return importlib.util.find_spec(module_name) is not None
+
+
+def resolve_attn_implementation(requested: str | None) -> str | None:
+    if requested != "flash_attention_2":
+        return requested
+    if module_available("flash_attn"):
+        return requested
+    return "sdpa"
 
 
 def save_json(path: str | Path, payload: Any) -> None:
@@ -440,6 +540,9 @@ def build_generation_config(config_cls: type[Any], **kwargs: Any) -> Any:
 
 
 def resolve_model_id(config: Mapping[str, Any], prefer_base_model: bool = False) -> str:
+    local_model_path = discover_local_model_path(config, prefer_base_model=prefer_base_model)
+    if local_model_path is not None:
+        return str(local_model_path)
     model_config = config["model"]
     if prefer_base_model and model_config.get("canonical_base_model_id"):
         return model_config["canonical_base_model_id"]

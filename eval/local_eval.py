@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import sys
 from pathlib import Path
 from typing import Any
@@ -12,10 +13,12 @@ if str(ROOT) not in sys.path:
 from common import (
     PROMPT_VARIANTS,
     answers_match,
+    bootstrap_optional_python_paths,
     extract_boxed_answer,
     load_config,
     read_jsonl,
     render_generation_prompt,
+    resolve_attn_implementation,
     resolve_model_id,
     save_json,
 )
@@ -82,6 +85,30 @@ def load_vllm(config: dict[str, Any], adapter_dir: str | None = None):
     return LLM(**kwargs)
 
 
+def load_transformers_backend(config: dict[str, Any], adapter_dir: str | None = None):
+    import torch
+    from peft import PeftModel
+    from transformers import AutoModelForCausalLM
+
+    model = AutoModelForCausalLM.from_pretrained(
+        resolve_model_id(config),
+        torch_dtype=torch.bfloat16,
+        device_map="auto",
+        trust_remote_code=config["model"]["trust_remote_code"],
+        attn_implementation=resolve_attn_implementation(config["model"]["attn_implementation"]),
+    )
+    if adapter_dir:
+        model = PeftModel.from_pretrained(model, adapter_dir)
+    model.eval()
+    return model
+
+
+def load_backend(config: dict[str, Any], adapter_dir: str | None = None) -> dict[str, Any]:
+    if importlib.util.find_spec("vllm") is not None:
+        return {"kind": "vllm", "model": load_vllm(config, adapter_dir=adapter_dir)}
+    return {"kind": "transformers", "model": load_transformers_backend(config, adapter_dir=adapter_dir)}
+
+
 def maybe_lora_request(adapter_dir: str | None):
     if not adapter_dir:
         return None
@@ -105,6 +132,29 @@ def generate_texts(llm, prompts: list[str], temperature: float, max_tokens: int,
     return [[candidate.text for candidate in output.outputs] for output in outputs]
 
 
+def generate_with_transformers(model, tokenizer, prompts: list[str], temperature: float, max_tokens: int, n: int = 1) -> list[Any]:
+    import torch
+
+    tokenizer.padding_side = "left"
+    outputs: list[Any] = []
+    for prompt in prompts:
+        encoded = tokenizer(prompt, return_tensors="pt").to(model.device)
+        with torch.no_grad():
+            generated = model.generate(
+                **encoded,
+                max_new_tokens=max_tokens,
+                do_sample=temperature > 0,
+                temperature=max(temperature, 1e-5),
+                num_return_sequences=n,
+                pad_token_id=tokenizer.pad_token_id,
+                eos_token_id=tokenizer.eos_token_id,
+            )
+        prompt_length = encoded["input_ids"].shape[-1]
+        texts = tokenizer.batch_decode(generated[:, prompt_length:], skip_special_tokens=True)
+        outputs.append(texts[0] if n == 1 else texts)
+    return outputs
+
+
 def best_of_n_accuracy(records: list[dict[str, Any]], candidates: list[list[str]]) -> dict[str, Any]:
     successes = 0
     details = []
@@ -124,6 +174,7 @@ def best_of_n_accuracy(records: list[dict[str, Any]], candidates: list[list[str]
 def main() -> None:
     args = parse_args()
     config = load_config(args.config)
+    bootstrap_optional_python_paths(config)
     validation_rows = load_validation(args.validation_file, max_samples=args.max_samples)
     if not validation_rows:
         raise FileNotFoundError("No validation rows found. Run data/filter_and_curate.py first.")
@@ -144,45 +195,74 @@ def main() -> None:
 
     for stage_name, adapter_dir in [("baseline", None), ("stage1_sft", stage1_dir), ("stage2_grpo", stage2_dir)]:
         adapter_path = adapter_dir if adapter_dir and Path(adapter_dir).exists() else None
-        llm = load_vllm(config, adapter_dir=adapter_path)
+        backend = load_backend(config, adapter_dir=adapter_path)
         prompts = make_prompts(config, validation_rows, default_prompt, tokenizer=tokenizer)
-        outputs = generate_texts(
-            llm,
-            prompts,
-            temperature=config["evaluation"]["deterministic_temperature"],
-            max_tokens=config["evaluation"]["deterministic_max_tokens"],
-            adapter_dir=adapter_path,
-        )
+        if backend["kind"] == "vllm":
+            outputs = generate_texts(
+                backend["model"],
+                prompts,
+                temperature=config["evaluation"]["deterministic_temperature"],
+                max_tokens=config["evaluation"]["deterministic_max_tokens"],
+                adapter_dir=adapter_path,
+            )
+        else:
+            outputs = generate_with_transformers(
+                backend["model"],
+                tokenizer,
+                prompts,
+                temperature=config["evaluation"]["deterministic_temperature"],
+                max_tokens=config["evaluation"]["deterministic_max_tokens"],
+            )
         results[stage_name] = evaluate_predictions(outputs, validation_rows)
 
     ablation_adapter = stage2_dir if Path(stage2_dir).exists() else stage1_dir if Path(stage1_dir).exists() else None
-    llm = load_vllm(config, adapter_dir=ablation_adapter if Path(ablation_adapter or "").exists() else None)
+    ablation_adapter = ablation_adapter if Path(ablation_adapter or "").exists() else None
+    backend = load_backend(config, adapter_dir=ablation_adapter)
     ablation_scores = []
     for prompt in PROMPT_VARIANTS:
         prompts = make_prompts(config, validation_rows, prompt, tokenizer=tokenizer)
-        outputs = generate_texts(
-            llm,
-            prompts,
-            temperature=config["evaluation"]["deterministic_temperature"],
-            max_tokens=config["evaluation"]["deterministic_max_tokens"],
-            adapter_dir=ablation_adapter if Path(ablation_adapter or "").exists() else None,
-        )
+        if backend["kind"] == "vllm":
+            outputs = generate_texts(
+                backend["model"],
+                prompts,
+                temperature=config["evaluation"]["deterministic_temperature"],
+                max_tokens=config["evaluation"]["deterministic_max_tokens"],
+                adapter_dir=ablation_adapter,
+            )
+        else:
+            outputs = generate_with_transformers(
+                backend["model"],
+                tokenizer,
+                prompts,
+                temperature=config["evaluation"]["deterministic_temperature"],
+                max_tokens=config["evaluation"]["deterministic_max_tokens"],
+            )
         score = evaluate_predictions(outputs, validation_rows)["accuracy"]
         ablation_scores.append({"prompt": prompt, "accuracy": score})
     best_variant = max(ablation_scores, key=lambda item: item["accuracy"])
     results["prompt_ablation"] = {"variants": ablation_scores, "best": best_variant}
 
-    best_of_n_adapter = ablation_adapter if Path(ablation_adapter or "").exists() else None
-    llm = load_vllm(config, adapter_dir=best_of_n_adapter)
+    best_of_n_adapter = ablation_adapter
+    backend = load_backend(config, adapter_dir=best_of_n_adapter)
     prompts = make_prompts(config, validation_rows, best_variant["prompt"], tokenizer=tokenizer)
-    candidates = generate_texts(
-        llm,
-        prompts,
-        temperature=config["evaluation"]["best_of_n_temperature"],
-        max_tokens=config["evaluation"]["deterministic_max_tokens"],
-        adapter_dir=best_of_n_adapter,
-        n=config["evaluation"]["best_of_n"],
-    )
+    if backend["kind"] == "vllm":
+        candidates = generate_texts(
+            backend["model"],
+            prompts,
+            temperature=config["evaluation"]["best_of_n_temperature"],
+            max_tokens=config["evaluation"]["deterministic_max_tokens"],
+            adapter_dir=best_of_n_adapter,
+            n=config["evaluation"]["best_of_n"],
+        )
+    else:
+        candidates = generate_with_transformers(
+            backend["model"],
+            tokenizer,
+            prompts,
+            temperature=config["evaluation"]["best_of_n_temperature"],
+            max_tokens=config["evaluation"]["deterministic_max_tokens"],
+            n=config["evaluation"]["best_of_n"],
+        )
     results["best_of_n"] = best_of_n_accuracy(validation_rows, candidates)
 
     save_json(eval_dir / "local_eval_summary.json", results)
