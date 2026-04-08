@@ -9,7 +9,8 @@
   "enable_tpu": "false",
   "enable_internet": "true",
   "dataset_sources": [
-    "rohansan1/nemotron-runtime-assets"
+    "rohansan1/nemotron-runtime-assets",
+    "rohansan1/nemotron-runtime-repo"
   ],
   "competition_sources": [
     "nvidia-nemotron-model-reasoning-challenge"

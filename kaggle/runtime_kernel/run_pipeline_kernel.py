@@ -10,20 +10,28 @@ from pathlib import Path
 import json
 
 
-ASSET_ROOT = Path("/kaggle/input/nemotron-runtime-assets")
-REPO_ARCHIVE = ASSET_ROOT / "nemotron-reasoning-lora.tar.gz"
+WHEEL_ASSET_ROOT = Path("/kaggle/input/nemotron-runtime-assets")
+REPO_ASSET_CANDIDATES = [
+    Path("/kaggle/input/nemotron-runtime-repo"),
+    WHEEL_ASSET_ROOT,
+]
+REPO_ARCHIVE_NAME = "nemotron-reasoning-lora.tar.gz"
 WORKING_REPO = Path("/kaggle/working/nemotron-reasoning-lora")
 ASSET_SNAPSHOT_PATH = Path("/kaggle/working/asset_snapshot.json")
 LAUNCHER_ERROR_PATH = Path("/kaggle/working/launcher_error.txt")
 
 
 def locate_repo_source() -> tuple[str, Path]:
-    if REPO_ARCHIVE.exists():
-        return "archive", REPO_ARCHIVE
-    markers = sorted(ASSET_ROOT.rglob("training/train_config.yaml"))
-    if markers:
-        return "directory", markers[0].parent.parent
-    raise FileNotFoundError(f"Missing repo source under {ASSET_ROOT}")
+    for asset_root in REPO_ASSET_CANDIDATES:
+        archive_path = asset_root / REPO_ARCHIVE_NAME
+        if archive_path.exists():
+            return "archive", archive_path
+    for asset_root in REPO_ASSET_CANDIDATES:
+        markers = sorted(asset_root.rglob("training/train_config.yaml"))
+        if markers:
+            return "directory", markers[0].parent.parent
+    roots = ", ".join(str(path) for path in REPO_ASSET_CANDIDATES)
+    raise FileNotFoundError(f"Missing repo source under any of: {roots}")
 
 
 def materialize_repo() -> None:
@@ -71,9 +79,9 @@ def materialize_wheels() -> Path | None:
     working_wheel_dir = Path("/kaggle/working/offline_wheels")
     if working_wheel_dir.exists():
         shutil.rmtree(working_wheel_dir)
-    wheel_dir = ASSET_ROOT / "offline_wheels"
-    wheel_zip = ASSET_ROOT / "offline_wheels.zip"
-    wheel_tar = ASSET_ROOT / "offline_wheels.tar"
+    wheel_dir = WHEEL_ASSET_ROOT / "offline_wheels"
+    wheel_zip = WHEEL_ASSET_ROOT / "offline_wheels.zip"
+    wheel_tar = WHEEL_ASSET_ROOT / "offline_wheels.tar"
     if wheel_dir.exists():
         return wheel_dir
     elif wheel_zip.exists():
@@ -83,7 +91,7 @@ def materialize_wheels() -> Path | None:
         with tarfile.open(wheel_tar) as archive:
             archive.extractall(working_wheel_dir)
     else:
-        recursive_wheels = sorted(ASSET_ROOT.rglob("*.whl"))
+        recursive_wheels = sorted(WHEEL_ASSET_ROOT.rglob("*.whl"))
         if not recursive_wheels:
             return None
         working_wheel_dir.mkdir(parents=True, exist_ok=True)
@@ -97,21 +105,26 @@ def materialize_wheels() -> Path | None:
 
 
 def dump_asset_snapshot() -> None:
-    files: list[dict[str, object]] = []
-    if ASSET_ROOT.exists():
-        for path in sorted(ASSET_ROOT.rglob("*"))[:400]:
-            record = {
-                "path": str(path.relative_to(ASSET_ROOT)),
-                "is_dir": path.is_dir(),
+    snapshots: list[dict[str, object]] = []
+    for asset_root in REPO_ASSET_CANDIDATES:
+        files: list[dict[str, object]] = []
+        if asset_root.exists():
+            for path in sorted(asset_root.rglob("*"))[:400]:
+                record = {
+                    "path": str(path.relative_to(asset_root)),
+                    "is_dir": path.is_dir(),
+                }
+                if path.is_file():
+                    record["size"] = path.stat().st_size
+                files.append(record)
+        snapshots.append(
+            {
+                "asset_root": str(asset_root),
+                "exists": asset_root.exists(),
+                "entries": files,
             }
-            if path.is_file():
-                record["size"] = path.stat().st_size
-            files.append(record)
-    payload = {
-        "asset_root": str(ASSET_ROOT),
-        "exists": ASSET_ROOT.exists(),
-        "entries": files,
-    }
+        )
+    payload = {"asset_roots": snapshots}
     ASSET_SNAPSHOT_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
