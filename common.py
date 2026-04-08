@@ -142,12 +142,14 @@ def module_available(module_name: str) -> bool:
 
 
 def apply_nemotron_blackwell_compat_fallback(model: Any) -> bool:
-    module_name = getattr(model.__class__, "__module__", "")
-    if "nemotron" not in module_name.lower():
-        return False
-    try:
-        module = importlib.import_module(module_name)
-    except Exception:
+    marker_values = [
+        getattr(model.__class__, "__module__", ""),
+        getattr(model.__class__, "__name__", ""),
+        str(getattr(getattr(model, "config", None), "model_type", "")),
+        str(getattr(type(getattr(model, "base_model", None)), "__name__", "")),
+    ]
+    marker_text = " ".join(marker_values).lower()
+    if "nemotron" not in marker_text:
         return False
 
     try:
@@ -168,32 +170,101 @@ def apply_nemotron_blackwell_compat_fallback(model: Any) -> bool:
             return torch.tanh(values)
         return values
 
-    def _causal_conv1d_fn(x: Any, weight: Any, bias: Any = None, activation: str | None = None) -> Any:
-        kernel_size = int(weight.shape[-1])
-        # Depthwise causal conv equivalent to causal_conv1d kernels.
-        out = F.conv1d(x, weight.unsqueeze(1), bias=bias, groups=int(x.shape[1]), padding=kernel_size - 1)
-        out = out[..., : x.shape[-1]]
-        return _apply_activation(out, activation)
+    def _normalize_weight(weight: Any) -> Any:
+        if getattr(weight, "dim", lambda: 0)() == 2:
+            return weight.unsqueeze(1)
+        return weight
 
-    def _causal_conv1d_update(x: Any, conv_state: Any, weight: Any, bias: Any = None, activation: str | None = None) -> Any:
+    def _causal_conv1d_fn(
+        x: Any,
+        weight: Any,
+        bias: Any = None,
+        seq_idx: Any = None,
+        initial_states: Any = None,
+        return_final_states: bool = False,
+        final_states_out: Any = None,
+        activation: str | None = None,
+    ) -> Any:
+        del seq_idx  # unsupported in the fallback path
+        kernel = _normalize_weight(weight)
+        kernel_size = int(kernel.shape[-1])
+        if initial_states is not None:
+            conv_input = torch.cat([initial_states, x], dim=-1)
+        else:
+            conv_input = F.pad(x, (kernel_size - 1, 0))
+        out = F.conv1d(conv_input, kernel, bias=bias, groups=int(x.shape[1]), padding=0)
+        out = _apply_activation(out, activation)
+        if return_final_states:
+            width = int(kernel.shape[-1])
+            final_states = conv_input[..., -(width - 1) :] if width > 1 else conv_input[..., :0]
+            if final_states_out is not None:
+                if getattr(final_states_out, "shape", None) == getattr(final_states, "shape", None):
+                    final_states_out.copy_(final_states)
+                    final_states = final_states_out
+                elif getattr(final_states_out, "shape", None) == getattr(final_states.transpose(1, 2), "shape", None):
+                    final_states_out.copy_(final_states.transpose(1, 2))
+                    final_states = final_states_out
+            return out, final_states
+        return out
+
+    def _causal_conv1d_update(
+        x: Any,
+        conv_state: Any,
+        weight: Any,
+        bias: Any = None,
+        activation: str | None = None,
+        cache_seqlens: Any = None,
+        conv_state_indices: Any = None,
+    ) -> Any:
+        del cache_seqlens, conv_state_indices
         step = x.squeeze(-1) if getattr(x, "dim", lambda: 0)() == 3 else x
         conv_state[..., :-1] = conv_state[..., 1:]
         conv_state[..., -1] = step
-        out = (conv_state * weight.unsqueeze(0)).sum(dim=-1)
+        kernel = weight if getattr(weight, "dim", lambda: 0)() == 2 else weight.squeeze(1)
+        out = (conv_state * kernel.unsqueeze(0)).sum(dim=-1)
         if bias is not None:
             out = out + bias
         return _apply_activation(out, activation)
 
     patched = False
-    if hasattr(module, "is_fast_path_available"):
-        module.is_fast_path_available = False
-        patched = True
-    if hasattr(module, "causal_conv1d_fn"):
-        module.causal_conv1d_fn = _causal_conv1d_fn
-        patched = True
-    if hasattr(module, "causal_conv1d_update"):
-        module.causal_conv1d_update = _causal_conv1d_update
-        patched = True
+    candidate_modules = {
+        getattr(model.__class__, "__module__", ""),
+        "causal_conv1d",
+        "causal_conv1d.causal_conv1d_interface",
+    }
+    for module_name in list(candidate_modules):
+        if not module_name:
+            continue
+        try:
+            module = importlib.import_module(module_name)
+        except Exception:
+            continue
+        if hasattr(module, "is_fast_path_available"):
+            module.is_fast_path_available = False
+            patched = True
+        if hasattr(module, "causal_conv1d_fn"):
+            module.causal_conv1d_fn = _causal_conv1d_fn
+            patched = True
+        if hasattr(module, "causal_conv1d_update"):
+            module.causal_conv1d_update = _causal_conv1d_update
+            patched = True
+
+    for loaded_module in list(sys.modules.values()):
+        module_name = getattr(loaded_module, "__name__", "")
+        if not module_name:
+            continue
+        lower_name = module_name.lower()
+        if "nemotron" not in lower_name and "mamba" not in lower_name and "causal_conv1d" not in lower_name:
+            continue
+        if hasattr(loaded_module, "is_fast_path_available"):
+            setattr(loaded_module, "is_fast_path_available", False)
+            patched = True
+        if hasattr(loaded_module, "causal_conv1d_fn"):
+            setattr(loaded_module, "causal_conv1d_fn", _causal_conv1d_fn)
+            patched = True
+        if hasattr(loaded_module, "causal_conv1d_update"):
+            setattr(loaded_module, "causal_conv1d_update", _causal_conv1d_update)
+            patched = True
     return patched
 
 
