@@ -42,12 +42,12 @@ def main() -> None:
     working_repo = Path(args.working_repo)
     if not asset_root.exists():
         raise FileNotFoundError(f"Asset dataset root not found: {asset_root}")
-    if not repo_archive.exists():
-        raise FileNotFoundError(f"Repo archive not found: {repo_archive}")
-
-    ensure_repo(repo_archive, working_repo)
+    if repo_archive.exists():
+        ensure_repo(repo_archive, working_repo)
+    elif not working_repo.exists():
+        raise FileNotFoundError(f"Repo archive not found and working repo missing: {repo_archive}")
     env = os.environ.copy()
-    env["NEMOTRON_OFFLINE_WHEEL_DIRS"] = str(asset_root / "offline_wheels")
+    env.setdefault("NEMOTRON_OFFLINE_WHEEL_DIRS", str(asset_root / "offline_wheels"))
 
     commands = [
         ["python", "training/kaggle_probe.py"],
