@@ -86,15 +86,31 @@ def dump_asset_snapshot() -> None:
     ASSET_SNAPSHOT_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
+def apply_runtime_config_overrides() -> None:
+    config_path = WORKING_REPO / "training" / "train_config.yaml"
+    if not config_path.exists():
+        return
+    config_text = config_path.read_text(encoding="utf-8")
+    # Some Nemotron runtime builds reject FlashAttention2 through Transformers init.
+    config_text = config_text.replace("attn_implementation: flash_attention_2", "attn_implementation: sdpa")
+    config_path.write_text(config_text, encoding="utf-8")
+
+
 def main() -> None:
     dump_asset_snapshot()
     try:
         materialize_repo()
         resolved_wheel_dir = materialize_wheels()
+        apply_runtime_config_overrides()
 
         env = os.environ.copy()
         env["NEMOTRON_OFFLINE_WHEEL_DIRS"] = str(resolved_wheel_dir)
-        subprocess.run(["python", "training/kaggle_kernel_entry.py"], cwd=str(WORKING_REPO), env=env, check=True)
+        subprocess.run(
+            ["python", "training/kaggle_kernel_entry.py", "--skip-synthetic"],
+            cwd=str(WORKING_REPO),
+            env=env,
+            check=True,
+        )
     except Exception:
         LAUNCHER_ERROR_PATH.write_text(traceback.format_exc(), encoding="utf-8")
         raise
