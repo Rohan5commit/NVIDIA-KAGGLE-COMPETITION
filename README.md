@@ -8,16 +8,32 @@ As of April 8, 2026:
 
 - GitHub repository scaffold: implemented and pushed to `https://github.com/Rohan5commit/nemotron-reasoning-lora`.
 - Kaggle competition access: confirmed for `nvidia-nemotron-model-reasoning-challenge`.
+- Kaggle RTX runtime access: confirmed through Kaggle Jupyter Server on April 8, 2026 with `NVIDIA RTX PRO 6000 Blackwell Server Edition` and 96 GB VRAM.
 - Data, SFT, GRPO, evaluation, and packaging code: implemented.
 - Smoke-run data download: completed across all six logical sources with 1,474 normalized records.
 - Smoke-run curation: completed with 182 selected records, 165 train rows, 17 validation rows, and 165 hard rows.
 - Local GPU execution: not available in this environment.
-- Google Cloud Blackwell VM execution: not available in this environment.
+- Kaggle remote bootstrap execution: attempted from the repo on the live RTX session, but blocked by DNS resolution failures to external hosts from inside the Kaggle runtime.
 - Final validation accuracy after SFT: not run in this environment.
 - Final validation accuracy after GRPO: not run in this environment.
 - `submission.zip`: not produced in this environment.
 - Public notebook link: `https://www.kaggle.com/code/rohansan1/nemotron-reasoning-lora-solution-writeup` (status observed on April 8, 2026: `COMPLETE`).
 - Midpoint submission status for April 9, 2026: not submitted from this environment.
+
+## Kaggle Runtime Notes
+
+The repository now includes Kaggle-specific helper scripts to drive the competition notebook through Kaggle Jupyter Server:
+
+- `training/kaggle_probe.py`
+- `training/kaggle_start_bootstrap.py`
+- `training/kaggle_start_pipeline.py`
+
+Observed behavior on April 8, 2026:
+
+- the competition draft session exposed the correct RTX hardware
+- the session mounted `/kaggle/input/competitions/nvidia-nemotron-model-reasoning-challenge/{train.csv,test.csv}`
+- outbound package/model fetches from the runtime failed with `Temporary failure in name resolution`
+- because the runtime could not resolve PyPI or Hugging Face hosts, the repo could not complete dependency installation, dataset download, or Nemotron weight retrieval from that Kaggle session
 
 ## Live Source Notes
 
@@ -38,6 +54,9 @@ The live Nemotron chat template on Hugging Face uses `<think>...</think>` inside
 - `data/generate_synthetic.py`: generates and filters synthetic reasoning traces for the hardest 2k problems.
 - `training/stage1_sft.py`: rank-32 LoRA SFT with an Unsloth-first, TRL fallback implementation.
 - `training/stage2_grpo.py`: GRPO fine-tuning with the four requested reward components.
+- `training/kaggle_probe.py`: Kaggle RTX runtime probe for packages, storage, network, and local competition mounts.
+- `training/kaggle_start_bootstrap.py`: detached remote dependency bootstrap for a Kaggle Jupyter Server session.
+- `training/kaggle_start_pipeline.py`: detached remote launcher for the full data-to-submission pipeline on Kaggle.
 - `training/train_config.yaml`: central configuration for model aliases, data quotas, training hyperparameters, and paths.
 - `eval/local_eval.py`: deterministic validation, prompt ablation, and best-of-16 ceiling evaluation with vLLM.
 - `submission/package_lora.py`: adapter-only verification, vLLM sanity check, and submission zip creation.
