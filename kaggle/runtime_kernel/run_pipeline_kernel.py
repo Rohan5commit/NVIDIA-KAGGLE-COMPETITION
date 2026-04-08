@@ -38,6 +38,35 @@ def materialize_repo() -> None:
     shutil.copytree(repo_source, WORKING_REPO)
 
 
+def maybe_sync_latest_repo() -> None:
+    repo_url = os.environ.get("NEMOTRON_GITHUB_REPO", "https://github.com/Rohan5commit/nemotron-reasoning-lora.git")
+    temp_clone = WORKING_REPO.parent / "nemotron-reasoning-lora-latest"
+    if temp_clone.exists():
+        shutil.rmtree(temp_clone)
+    try:
+        completed = subprocess.run(
+            ["git", "clone", "--depth", "1", repo_url, str(temp_clone)],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=300,
+        )
+        print(f"[info] Synced latest repo from {repo_url}: {completed.stdout.strip()}")
+    except Exception as error:
+        print(f"[warn] Unable to sync latest repo from {repo_url}, using bundled archive: {error}")
+        if temp_clone.exists():
+            shutil.rmtree(temp_clone)
+        return
+    marker = temp_clone / "training" / "train_config.yaml"
+    if not marker.exists():
+        print("[warn] Synced repo is missing training/train_config.yaml, keeping bundled archive.")
+        shutil.rmtree(temp_clone, ignore_errors=True)
+        return
+    if WORKING_REPO.exists():
+        shutil.rmtree(WORKING_REPO)
+    shutil.move(str(temp_clone), str(WORKING_REPO))
+
+
 def materialize_wheels() -> Path | None:
     working_wheel_dir = Path("/kaggle/working/offline_wheels")
     if working_wheel_dir.exists():
@@ -112,6 +141,7 @@ def main() -> None:
     dump_asset_snapshot()
     try:
         materialize_repo()
+        maybe_sync_latest_repo()
         resolved_wheel_dir = materialize_wheels()
         apply_runtime_config_overrides()
 
