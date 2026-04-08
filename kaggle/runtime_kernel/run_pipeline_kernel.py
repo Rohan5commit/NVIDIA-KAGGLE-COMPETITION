@@ -98,6 +98,13 @@ def apply_runtime_config_overrides() -> None:
     config_text = config_text.replace("loftq_init: true", "loftq_init: false")
     config_path.write_text(config_text, encoding="utf-8")
 
+    stage1_path = WORKING_REPO / "training" / "stage1_sft.py"
+    if stage1_path.exists():
+        stage1_text = stage1_path.read_text(encoding="utf-8")
+        # trl>=1.0 expects `processing_class` in SFTTrainer instead of `tokenizer`.
+        stage1_text = stage1_text.replace("        tokenizer=tokenizer,\n", "        processing_class=tokenizer,\n")
+        stage1_path.write_text(stage1_text, encoding="utf-8")
+
 
 def main() -> None:
     dump_asset_snapshot()
