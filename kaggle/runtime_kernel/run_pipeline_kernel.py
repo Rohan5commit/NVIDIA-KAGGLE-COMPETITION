@@ -94,6 +94,8 @@ def apply_runtime_config_overrides() -> None:
     # Current Kaggle Nemotron runtime only initializes with eager attention in Transformers.
     config_text = config_text.replace("attn_implementation: flash_attention_2", "attn_implementation: eager")
     config_text = config_text.replace("attn_implementation: sdpa", "attn_implementation: eager")
+    # LoftQ requires Hub-style model identifiers; local Kaggle model mounts break initialization.
+    config_text = config_text.replace("loftq_init: true", "loftq_init: false")
     config_path.write_text(config_text, encoding="utf-8")
 
 
