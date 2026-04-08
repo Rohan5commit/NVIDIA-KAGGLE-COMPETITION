@@ -243,9 +243,7 @@ def apply_nemotron_blackwell_compat_fallback(model: Any) -> bool:
                 weighted_output = expert_output * expert_weights.unsqueeze(-1)
                 final_hidden_states.index_add_(0, token_indices, weighted_output.to(final_hidden_states.dtype))
             else:
-                expert_dtype = expert.down_proj.weight.dtype
-                dummy_out = expert(torch.zeros_like(hidden_states[0]).unsqueeze(0).to(expert_dtype))
-                final_hidden_states = final_hidden_states + dummy_out.to(final_hidden_states.dtype)
+                continue
 
         return final_hidden_states.type(hidden_states.dtype)
 
