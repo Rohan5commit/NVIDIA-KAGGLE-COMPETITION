@@ -101,8 +101,10 @@ def apply_runtime_config_overrides() -> None:
     stage1_path = WORKING_REPO / "training" / "stage1_sft.py"
     if stage1_path.exists():
         stage1_text = stage1_path.read_text(encoding="utf-8")
-        # trl>=1.0 expects `processing_class` in SFTTrainer instead of `tokenizer`.
+        # trl>=1.0 expects `processing_class` in SFTTrainer instead of `tokenizer`
+        # and no longer accepts `dataset_text_field` as an SFTTrainer constructor arg.
         stage1_text = stage1_text.replace("        tokenizer=tokenizer,\n", "        processing_class=tokenizer,\n")
+        stage1_text = stage1_text.replace('        dataset_text_field="text",\n', "")
         stage1_path.write_text(stage1_text, encoding="utf-8")
 
 

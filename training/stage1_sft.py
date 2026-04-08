@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 import sys
 from pathlib import Path
 from typing import Any
@@ -80,6 +81,7 @@ def training_args(config: dict[str, Any], output_dir: str):
         gradient_checkpointing=stage_config["gradient_checkpointing"],
         max_length=stage_config["max_seq_length"],
         max_seq_length=stage_config["max_seq_length"],
+        dataset_text_field="text",
         report_to=[],
         packing=False,
         seed=config["project"]["seed"],
@@ -96,11 +98,28 @@ def load_tokenizer(model_id: str, trust_remote_code: bool):
     return tokenizer
 
 
+def build_sft_trainer(model, tokenizer, config: dict[str, Any], output_dir: str, dataset_rows: list[dict[str, Any]]):
+    from datasets import Dataset
+    from trl import SFTTrainer
+
+    trainer_kwargs = {
+        "model": model,
+        "args": training_args(config, output_dir),
+        "train_dataset": Dataset.from_list(dataset_rows),
+    }
+    signature = inspect.signature(SFTTrainer.__init__).parameters
+    if "processing_class" in signature:
+        trainer_kwargs["processing_class"] = tokenizer
+    elif "tokenizer" in signature:
+        trainer_kwargs["tokenizer"] = tokenizer
+    if "dataset_text_field" in signature:
+        trainer_kwargs["dataset_text_field"] = "text"
+    return SFTTrainer(**trainer_kwargs)
+
+
 def run_unsloth(config: dict[str, Any], dataset, tokenizer, output_dir: str):
     import torch
-    from datasets import Dataset
     from peft import replace_lora_weights_loftq
-    from trl import SFTTrainer
     from unsloth import FastLanguageModel
 
     stage_config = config["stage1_sft"]
@@ -125,13 +144,7 @@ def run_unsloth(config: dict[str, Any], dataset, tokenizer, output_dir: str):
     if stage_config["loftq_init"]:
         replace_lora_weights_loftq(model)
 
-    trainer = SFTTrainer(
-        model=model,
-        tokenizer=tokenizer,
-        args=training_args(config, output_dir),
-        train_dataset=Dataset.from_list(dataset),
-        dataset_text_field="text",
-    )
+    trainer = build_sft_trainer(model=model, tokenizer=tokenizer, config=config, output_dir=output_dir, dataset_rows=dataset)
     train_result = trainer.train()
     trainer.save_model(output_dir)
     tokenizer.save_pretrained(output_dir)
@@ -140,10 +153,8 @@ def run_unsloth(config: dict[str, Any], dataset, tokenizer, output_dir: str):
 
 def run_fallback(config: dict[str, Any], dataset, tokenizer, output_dir: str):
     import torch
-    from datasets import Dataset
     from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training, replace_lora_weights_loftq
     from transformers import AutoModelForCausalLM, BitsAndBytesConfig
-    from trl import SFTTrainer
 
     stage_config = config["stage1_sft"]
     model_id = resolve_model_id(config)
@@ -175,13 +186,7 @@ def run_fallback(config: dict[str, Any], dataset, tokenizer, output_dir: str):
     if stage_config["loftq_init"]:
         replace_lora_weights_loftq(model)
 
-    trainer = SFTTrainer(
-        model=model,
-        tokenizer=tokenizer,
-        args=training_args(config, output_dir),
-        train_dataset=Dataset.from_list(dataset),
-        dataset_text_field="text",
-    )
+    trainer = build_sft_trainer(model=model, tokenizer=tokenizer, config=config, output_dir=output_dir, dataset_rows=dataset)
     train_result = trainer.train()
     trainer.save_model(output_dir)
     tokenizer.save_pretrained(output_dir)
