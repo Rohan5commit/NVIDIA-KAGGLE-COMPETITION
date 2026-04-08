@@ -6,15 +6,17 @@ LoRA training and evaluation pipeline for the Kaggle NVIDIA Nemotron Model Reaso
 
 As of April 8, 2026:
 
-- GitHub repository scaffold: implemented locally and ready to push.
+- GitHub repository scaffold: implemented and pushed to `https://github.com/Rohan5commit/nemotron-reasoning-lora`.
 - Kaggle competition access: confirmed for `nvidia-nemotron-model-reasoning-challenge`.
 - Data, SFT, GRPO, evaluation, and packaging code: implemented.
+- Smoke-run data download: completed across all six logical sources with 1,474 normalized records.
+- Smoke-run curation: completed with 182 selected records, 165 train rows, 17 validation rows, and 165 hard rows.
 - Local GPU execution: not available in this environment.
 - Google Cloud Blackwell VM execution: not available in this environment.
 - Final validation accuracy after SFT: not run in this environment.
 - Final validation accuracy after GRPO: not run in this environment.
 - `submission.zip`: not produced in this environment.
-- Public notebook link: pending Kaggle publication.
+- Public notebook link: `https://www.kaggle.com/code/rohansan1/nemotron-reasoning-lora-solution-writeup` (status observed on April 8, 2026: `COMPLETE`).
 - Midpoint submission status for April 9, 2026: not submitted from this environment.
 
 ## Live Source Notes
@@ -68,6 +70,28 @@ Actual downloaded and curated sizes are written to:
 
 - `artifacts/dataset_download_summary.json`
 - `artifacts/filtering_summary.json`
+
+Smoke-run artifact counts currently in the repo from `python data/download_datasets.py --cap-override 250 --streaming`:
+
+| logical source | normalized records |
+|---|---:|
+| gsm8k | 250 |
+| math | 250 |
+| numina_cot | 224 |
+| open_math_reasoning | 248 |
+| numina_h4 | 250 |
+| hendrycks_math | 252 |
+| total | 1,474 |
+
+Smoke-run curation output:
+
+| artifact | rows |
+|---|---:|
+| curated_full.jsonl | 182 |
+| train_sft.jsonl | 165 |
+| validation.jsonl | 17 |
+| train_grpo.jsonl | 165 |
+| synthetic_seed_candidates.jsonl | 165 |
 
 ## Training Plan
 

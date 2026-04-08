@@ -61,6 +61,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", default=None)
     parser.add_argument("--streaming", action="store_true", help="Use streaming mode when supported.")
     parser.add_argument("--force", action="store_true", help="Overwrite existing raw files.")
+    parser.add_argument("--cap-override", type=int, default=None, help="Override the configured per-source cap for a faster smoke run.")
     return parser.parse_args()
 
 
@@ -175,54 +176,58 @@ def main() -> None:
 
     for source_name, source_spec in config["datasets"]["resolved"].items():
         dataset_id = source_spec["dataset_id"]
-        cap = int(config["datasets"]["download_caps"].get(source_name, 0) or 0)
+        configured_cap = int(config["datasets"]["download_caps"].get(source_name, 0) or 0)
+        cap = int(args.cap_override or configured_cap)
         target_file = raw_dir / f"{source_name}.jsonl"
         if target_file.exists() and not args.force:
             print(f"[skip] {source_name}: {target_file} already exists")
             continue
         if target_file.exists():
             target_file.unlink()
-        config_name = source_spec.get("config_name")
-        try:
-            builder = load_dataset_builder(dataset_id, name=config_name)
-        except Exception as error:
-            summary["sources"][source_name] = {
-                "requested_id": source_spec["requested_id"],
-                "resolved_id": dataset_id,
-                "config_name": config_name,
-                "error": str(error),
-            }
-            continue
-        available_splits = list((builder.info.splits or {}).keys())
-        split_names = list(source_spec.get("split_names") or available_splits or ["train"])
+        config_names = source_spec.get("config_names") or [source_spec.get("config_name")]
+        config_names = [name for name in config_names if name is not None] or [None]
         source_summary = {
             "requested_id": source_spec["requested_id"],
             "resolved_id": dataset_id,
-            "config_name": config_name,
+            "config_name": source_spec.get("config_name"),
+            "config_names": config_names,
             "note": source_spec.get("note"),
             "splits": {},
         }
-        per_split_cap = max(cap // max(len(split_names), 1), 1) if cap else 0
+        per_config_cap = max(cap // max(len(config_names), 1), 1) if cap else 0
         total_emitted = 0
 
-        for split_name in split_names:
-            if available_splits and split_name not in available_splits:
-                continue
-            print(f"[download] {source_name}:{split_name} -> {dataset_id}")
+        for config_name in config_names:
             try:
-                dataset = load_dataset(dataset_id, name=config_name, split=split_name, streaming=args.streaming)
+                builder = load_dataset_builder(dataset_id, name=config_name)
             except Exception as error:
-                source_summary["splits"][split_name] = {"error": str(error)}
+                source_summary["splits"][config_name or "default"] = {"error": str(error)}
                 continue
-            emitted = 0
-            split_cap = per_split_cap or int((builder.info.splits or {}).get(split_name).num_examples if (builder.info.splits or {}).get(split_name) else 10**12)
-            for record in iter_split_records(dataset, source_name, dataset_id, split_name, split_cap):
-                append_jsonl(target_file, record)
-                emitted += 1
-                total_emitted += 1
+            available_splits = list((builder.info.splits or {}).keys())
+            split_names = list(source_spec.get("split_names") or available_splits or ["train"])
+            per_split_cap = max((per_config_cap or 0) // max(len(split_names), 1), 1) if per_config_cap else 0
+
+            for split_name in split_names:
+                if available_splits and split_name not in available_splits:
+                    continue
+                config_label = f"{config_name}:{split_name}" if config_name else split_name
+                print(f"[download] {source_name}:{config_label} -> {dataset_id}")
+                try:
+                    dataset = load_dataset(dataset_id, name=config_name, split=split_name, streaming=args.streaming)
+                except Exception as error:
+                    source_summary["splits"][config_label] = {"error": str(error)}
+                    continue
+                emitted = 0
+                split_cap = per_split_cap or int((builder.info.splits or {}).get(split_name).num_examples if (builder.info.splits or {}).get(split_name) else 10**12)
+                for record in iter_split_records(dataset, source_name, dataset_id, split_name, split_cap):
+                    append_jsonl(target_file, record)
+                    emitted += 1
+                    total_emitted += 1
+                    if cap and total_emitted >= cap:
+                        break
+                source_summary["splits"][config_label] = {"records": emitted}
                 if cap and total_emitted >= cap:
                     break
-            source_summary["splits"][split_name] = {"records": emitted}
             if cap and total_emitted >= cap:
                 break
 

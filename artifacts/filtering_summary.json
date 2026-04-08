@@ -1,0 +1,440 @@
+{
+  "raw_records": 1474,
+  "deduped_records": 262,
+  "top_quality_records": 182,
+  "final_selected_records": 182,
+  "train_records": 165,
+  "validation_records": 17,
+  "grpo_records": 165,
+  "synthetic_seed_candidates": 165,
+  "invalid_reasons": {
+    "length_filter": 1059,
+    "unclean_answer": 106,
+    "incorrect_answer": 41
+  },
+  "selected_by_bucket": {
+    "hard": 179,
+    "medium": 3
+  },
+  "train_by_source": {
+    "math": 35,
+    "numina_h4": 45,
+    "open_math_reasoning": 24,
+    "hendrycks_math": 9,
+    "numina_cot": 52
+  },
+  "validation_by_source": {
+    "math": 7,
+    "numina_h4": 1,
+    "numina_cot": 5,
+    "hendrycks_math": 4
+  },
+  "quality_histogram_before": [
+    {
+      "bin_start": 0.0,
+      "bin_end": 0.05,
+      "count": 1332.0
+    },
+    {
+      "bin_start": 0.05,
+      "bin_end": 0.1,
+      "count": 53.0
+    },
+    {
+      "bin_start": 0.1,
+      "bin_end": 0.15000000000000002,
+      "count": 15.0
+    },
+    {
+      "bin_start": 0.15000000000000002,
+      "bin_end": 0.2,
+      "count": 0.0
+    },
+    {
+      "bin_start": 0.2,
+      "bin_end": 0.25,
+      "count": 1.0
+    },
+    {
+      "bin_start": 0.25,
+      "bin_end": 0.3,
+      "count": 0.0
+    },
+    {
+      "bin_start": 0.30000000000000004,
+      "bin_end": 0.35000000000000003,
+      "count": 2.0
+    },
+    {
+      "bin_start": 0.35000000000000003,
+      "bin_end": 0.4,
+      "count": 0.0
+    },
+    {
+      "bin_start": 0.4,
+      "bin_end": 0.45,
+      "count": 0.0
+    },
+    {
+      "bin_start": 0.45,
+      "bin_end": 0.5,
+      "count": 0.0
+    },
+    {
+      "bin_start": 0.5,
+      "bin_end": 0.55,
+      "count": 4.0
+    },
+    {
+      "bin_start": 0.55,
+      "bin_end": 0.6000000000000001,
+      "count": 0.0
+    },
+    {
+      "bin_start": 0.6000000000000001,
+      "bin_end": 0.6500000000000001,
+      "count": 0.0
+    },
+    {
+      "bin_start": 0.65,
+      "bin_end": 0.7000000000000001,
+      "count": 0.0
+    },
+    {
+      "bin_start": 0.7000000000000001,
+      "bin_end": 0.7500000000000001,
+      "count": 0.0
+    },
+    {
+      "bin_start": 0.75,
+      "bin_end": 0.8,
+      "count": 0.0
+    },
+    {
+      "bin_start": 0.8,
+      "bin_end": 0.8500000000000001,
+      "count": 0.0
+    },
+    {
+      "bin_start": 0.8500000000000001,
+      "bin_end": 0.9000000000000001,
+      "count": 0.0
+    },
+    {
+      "bin_start": 0.9,
+      "bin_end": 0.9500000000000001,
+      "count": 0.0
+    },
+    {
+      "bin_start": 0.9500000000000001,
+      "bin_end": 1.0,
+      "count": 67.0
+    }
+  ],
+  "quality_histogram_after": [
+    {
+      "bin_start": 0.002457002457002457,
+      "bin_end": 0.002584152334152334,
+      "count": 17.0
+    },
+    {
+      "bin_start": 0.002584152334152334,
+      "bin_end": 0.002711302211302211,
+      "count": 11.0
+    },
+    {
+      "bin_start": 0.0027113022113022115,
+      "bin_end": 0.0028384520884520885,
+      "count": 7.0
+    },
+    {
+      "bin_start": 0.0028384520884520885,
+      "bin_end": 0.0029656019656019656,
+      "count": 9.0
+    },
+    {
+      "bin_start": 0.0029656019656019656,
+      "bin_end": 0.0030927518427518426,
+      "count": 2.0
+    },
+    {
+      "bin_start": 0.0030927518427518426,
+      "bin_end": 0.0032199017199017197,
+      "count": 6.0
+    },
+    {
+      "bin_start": 0.0032199017199017197,
+      "bin_end": 0.0033470515970515967,
+      "count": 9.0
+    },
+    {
+      "bin_start": 0.003347051597051597,
+      "bin_end": 0.003474201474201474,
+      "count": 8.0
+    },
+    {
+      "bin_start": 0.003474201474201474,
+      "bin_end": 0.0036013513513513513,
+      "count": 10.0
+    },
+    {
+      "bin_start": 0.0036013513513513513,
+      "bin_end": 0.0037285012285012283,
+      "count": 8.0
+    },
+    {
+      "bin_start": 0.0037285012285012287,
+      "bin_end": 0.003855651105651106,
+      "count": 7.0
+    },
+    {
+      "bin_start": 0.003855651105651106,
+      "bin_end": 0.003982800982800983,
+      "count": 10.0
+    },
+    {
+      "bin_start": 0.003982800982800983,
+      "bin_end": 0.00410995085995086,
+      "count": 14.0
+    },
+    {
+      "bin_start": 0.00410995085995086,
+      "bin_end": 0.004237100737100737,
+      "count": 8.0
+    },
+    {
+      "bin_start": 0.004237100737100737,
+      "bin_end": 0.004364250614250614,
+      "count": 7.0
+    },
+    {
+      "bin_start": 0.004364250614250614,
+      "bin_end": 0.004491400491400491,
+      "count": 9.0
+    },
+    {
+      "bin_start": 0.004491400491400491,
+      "bin_end": 0.004618550368550368,
+      "count": 11.0
+    },
+    {
+      "bin_start": 0.004618550368550368,
+      "bin_end": 0.004745700245700245,
+      "count": 9.0
+    },
+    {
+      "bin_start": 0.004745700245700245,
+      "bin_end": 0.004872850122850122,
+      "count": 7.0
+    },
+    {
+      "bin_start": 0.004872850122850123,
+      "bin_end": 0.005,
+      "count": 13.0
+    }
+  ],
+  "reasoning_length_histogram_before": [
+    {
+      "bin_start": 1.0,
+      "bin_end": 517.35,
+      "count": 1315.0
+    },
+    {
+      "bin_start": 517.35,
+      "bin_end": 1033.7,
+      "count": 41.0
+    },
+    {
+      "bin_start": 1033.7,
+      "bin_end": 1550.0500000000002,
+      "count": 12.0
+    },
+    {
+      "bin_start": 1550.0500000000002,
+      "bin_end": 2066.4,
+      "count": 19.0
+    },
+    {
+      "bin_start": 2066.4,
+      "bin_end": 2582.75,
+      "count": 14.0
+    },
+    {
+      "bin_start": 2582.75,
+      "bin_end": 3099.1,
+      "count": 9.0
+    },
+    {
+      "bin_start": 3099.1000000000004,
+      "bin_end": 3615.4500000000003,
+      "count": 14.0
+    },
+    {
+      "bin_start": 3615.4500000000003,
+      "bin_end": 4131.8,
+      "count": 10.0
+    },
+    {
+      "bin_start": 4131.8,
+      "bin_end": 4648.150000000001,
+      "count": 6.0
+    },
+    {
+      "bin_start": 4648.150000000001,
+      "bin_end": 5164.500000000001,
+      "count": 7.0
+    },
+    {
+      "bin_start": 5164.5,
+      "bin_end": 5680.85,
+      "count": 4.0
+    },
+    {
+      "bin_start": 5680.85,
+      "bin_end": 6197.200000000001,
+      "count": 4.0
+    },
+    {
+      "bin_start": 6197.200000000001,
+      "bin_end": 6713.550000000001,
+      "count": 4.0
+    },
+    {
+      "bin_start": 6713.55,
+      "bin_end": 7229.900000000001,
+      "count": 3.0
+    },
+    {
+      "bin_start": 7229.900000000001,
+      "bin_end": 7746.250000000001,
+      "count": 3.0
+    },
+    {
+      "bin_start": 7746.25,
+      "bin_end": 8262.6,
+      "count": 2.0
+    },
+    {
+      "bin_start": 8262.6,
+      "bin_end": 8778.95,
+      "count": 0.0
+    },
+    {
+      "bin_start": 8778.95,
+      "bin_end": 9295.300000000001,
+      "count": 5.0
+    },
+    {
+      "bin_start": 9295.300000000001,
+      "bin_end": 9811.650000000001,
+      "count": 0.0
+    },
+    {
+      "bin_start": 9811.65,
+      "bin_end": 10328.0,
+      "count": 2.0
+    }
+  ],
+  "reasoning_length_histogram_after": [
+    {
+      "bin_start": 200.0,
+      "bin_end": 210.35,
+      "count": 20.0
+    },
+    {
+      "bin_start": 210.35,
+      "bin_end": 220.7,
+      "count": 19.0
+    },
+    {
+      "bin_start": 220.7,
+      "bin_end": 231.04999999999998,
+      "count": 10.0
+    },
+    {
+      "bin_start": 231.05,
+      "bin_end": 241.4,
+      "count": 14.0
+    },
+    {
+      "bin_start": 241.4,
+      "bin_end": 251.75,
+      "count": 15.0
+    },
+    {
+      "bin_start": 251.75,
+      "bin_end": 262.1,
+      "count": 13.0
+    },
+    {
+      "bin_start": 262.1,
+      "bin_end": 272.45000000000005,
+      "count": 6.0
+    },
+    {
+      "bin_start": 272.45,
+      "bin_end": 282.8,
+      "count": 11.0
+    },
+    {
+      "bin_start": 282.8,
+      "bin_end": 293.15000000000003,
+      "count": 11.0
+    },
+    {
+      "bin_start": 293.15,
+      "bin_end": 303.5,
+      "count": 8.0
+    },
+    {
+      "bin_start": 303.5,
+      "bin_end": 313.85,
+      "count": 4.0
+    },
+    {
+      "bin_start": 313.85,
+      "bin_end": 324.20000000000005,
+      "count": 5.0
+    },
+    {
+      "bin_start": 324.2,
+      "bin_end": 334.55,
+      "count": 1.0
+    },
+    {
+      "bin_start": 334.54999999999995,
+      "bin_end": 344.9,
+      "count": 6.0
+    },
+    {
+      "bin_start": 344.9,
+      "bin_end": 355.25,
+      "count": 5.0
+    },
+    {
+      "bin_start": 355.25,
+      "bin_end": 365.6,
+      "count": 6.0
+    },
+    {
+      "bin_start": 365.6,
+      "bin_end": 375.95000000000005,
+      "count": 5.0
+    },
+    {
+      "bin_start": 375.95,
+      "bin_end": 386.3,
+      "count": 6.0
+    },
+    {
+      "bin_start": 386.29999999999995,
+      "bin_end": 396.65,
+      "count": 10.0
+    },
+    {
+      "bin_start": 396.65,
+      "bin_end": 407.0,
+      "count": 7.0
+    }
+  ]
+}

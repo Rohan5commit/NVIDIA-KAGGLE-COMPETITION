@@ -1,0 +1,17 @@
+{
+  "id": "rohansan1/nemotron-reasoning-lora-solution-writeup",
+  "title": "Nemotron Reasoning LoRA Solution Writeup",
+  "code_file": "solution_writeup.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": "false",
+  "enable_gpu": "false",
+  "enable_tpu": "false",
+  "enable_internet": "true",
+  "dataset_sources": [],
+  "competition_sources": [
+    "nvidia-nemotron-model-reasoning-challenge"
+  ],
+  "kernel_sources": [],
+  "model_sources": []
+}

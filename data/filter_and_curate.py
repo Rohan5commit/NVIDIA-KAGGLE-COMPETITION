@@ -207,7 +207,13 @@ def main() -> None:
         selected.extend(carryover[: final_target - len(selected)])
 
     selected = sorted(selected, key=lambda row: row["quality_score"], reverse=True)[:final_target]
-    train_rows, validation_rows = carve_validation(selected, int(config["curation"]["validation_size"]), int(config["project"]["seed"]))
+    configured_validation_size = int(config["curation"]["validation_size"])
+    effective_validation_size = min(
+        configured_validation_size,
+        max(1, len(selected) // 5),
+        max(len(selected) - 1, 1),
+    )
+    train_rows, validation_rows = carve_validation(selected, effective_validation_size, int(config["project"]["seed"]))
 
     hard_rows = [row for row in train_rows if row["difficulty_bucket"] == "hard"]
     hard_rows = sorted(hard_rows, key=lambda row: row["quality_score"], reverse=True)

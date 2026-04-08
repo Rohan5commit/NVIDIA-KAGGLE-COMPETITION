@@ -1,0 +1,129 @@
+{
+  "sources": {
+    "gsm8k": {
+      "requested_id": "openai/gsm8k",
+      "resolved_id": "openai/gsm8k",
+      "config_name": "main",
+      "note": null,
+      "splits": {
+        "train": {
+          "records": 125
+        },
+        "test": {
+          "records": 125
+        }
+      },
+      "output_file": "data/raw/gsm8k.jsonl",
+      "total_records": 250
+    },
+    "math": {
+      "requested_id": "lighteval/MATH",
+      "resolved_id": "HuggingFaceH4/MATH",
+      "config_name": null,
+      "note": "Requested ID did not resolve on 2026-04-08; using live Hugging Face H4 mirror.",
+      "splits": {
+        "train": {
+          "records": 125
+        },
+        "test": {
+          "records": 125
+        }
+      },
+      "output_file": "data/raw/math.jsonl",
+      "total_records": 250
+    },
+    "numina_cot": {
+      "requested_id": "AI-MO/NuminaMath-CoT",
+      "resolved_id": "AI-MO/NuminaMath-CoT",
+      "config_name": null,
+      "note": null,
+      "splits": {
+        "train": {
+          "records": 125
+        },
+        "test": {
+          "records": 99
+        }
+      },
+      "output_file": "data/raw/numina_cot.jsonl",
+      "total_records": 224
+    },
+    "open_math_reasoning": {
+      "requested_id": "nvidia/OpenMathReasoning",
+      "resolved_id": "nvidia/OpenMathReasoning",
+      "config_name": null,
+      "note": null,
+      "splits": {
+        "cot": {
+          "records": 62
+        },
+        "tir": {
+          "records": 62
+        },
+        "genselect": {
+          "records": 62
+        },
+        "additional_problems": {
+          "records": 62
+        }
+      },
+      "output_file": "data/raw/open_math_reasoning.jsonl",
+      "total_records": 248
+    },
+    "numina_h4": {
+      "requested_id": "HuggingFaceH4/numina-math-cots",
+      "resolved_id": "HuggingFaceH4/numina_60k_math_verify_correct_2_4gens_with_rm_scores",
+      "config_name": null,
+      "note": "Requested ID did not resolve on 2026-04-08; using the closest live Hugging Face H4 Numina verification set.",
+      "splits": {
+        "train": {
+          "records": 250
+        }
+      },
+      "output_file": "data/raw/numina_h4.jsonl",
+      "total_records": 250
+    },
+    "hendrycks_math": {
+      "requested_id": "EleutherAI/hendrycks_math",
+      "resolved_id": "EleutherAI/hendrycks_math",
+      "config_names": [
+        "algebra",
+        "counting_and_probability",
+        "geometry",
+        "intermediate_algebra",
+        "number_theory",
+        "prealgebra",
+        "precalculus"
+      ],
+      "note": "Filled by a direct multi-config pass after teaching the downloader to support config fan-out.",
+      "splits": {
+        "algebra:train": {
+          "records": 36
+        },
+        "counting_and_probability:train": {
+          "records": 36
+        },
+        "geometry:train": {
+          "records": 36
+        },
+        "intermediate_algebra:train": {
+          "records": 36
+        },
+        "number_theory:train": {
+          "records": 36
+        },
+        "prealgebra:train": {
+          "records": 36
+        },
+        "precalculus:train": {
+          "records": 36
+        }
+      },
+      "output_file": "data/raw/hendrycks_math.jsonl",
+      "total_records": 252
+    }
+  },
+  "totals": {
+    "records": 1474
+  }
+}
