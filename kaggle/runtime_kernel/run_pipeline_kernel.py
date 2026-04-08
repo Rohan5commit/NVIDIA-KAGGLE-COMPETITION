@@ -161,8 +161,15 @@ def main() -> None:
         env = os.environ.copy()
         if resolved_wheel_dir is not None:
             env["NEMOTRON_OFFLINE_WHEEL_DIRS"] = str(resolved_wheel_dir)
+        pipeline_mode = env.get("NEMOTRON_KERNEL_MODE", "stage1_fast").strip().lower()
+        command = ["python", "training/kaggle_kernel_entry.py", "--skip-synthetic"]
+        if pipeline_mode != "full":
+            command.append("--skip-grpo")
+            print(f"[info] Kernel mode={pipeline_mode}: running stage1/eval/package only.")
+        else:
+            print(f"[info] Kernel mode={pipeline_mode}: running full stage1+stage2 pipeline.")
         subprocess.run(
-            ["python", "training/kaggle_kernel_entry.py", "--skip-synthetic"],
+            command,
             cwd=str(WORKING_REPO),
             env=env,
             check=True,

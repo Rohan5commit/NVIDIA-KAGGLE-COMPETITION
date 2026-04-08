@@ -65,6 +65,8 @@ def main() -> None:
                 ["python", "submission/package_lora.py", "--adapter-dir", "outputs/stage2_grpo"],
             ]
         )
+    else:
+        commands.append(["python", "submission/package_lora.py", "--adapter-dir", "outputs/stage1_sft"])
 
     started_at = datetime.now(timezone.utc).isoformat()
     with LOG_PATH.open("w", encoding="utf-8") as log_handle:
