@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import importlib.util
 import inspect
 import json
@@ -138,6 +139,62 @@ def bootstrap_optional_python_paths(config: Mapping[str, Any] | None = None) -> 
 
 def module_available(module_name: str) -> bool:
     return importlib.util.find_spec(module_name) is not None
+
+
+def apply_nemotron_blackwell_compat_fallback(model: Any) -> bool:
+    module_name = getattr(model.__class__, "__module__", "")
+    if "nemotron" not in module_name.lower():
+        return False
+    try:
+        module = importlib.import_module(module_name)
+    except Exception:
+        return False
+
+    try:
+        import torch
+        import torch.nn.functional as F
+    except Exception:
+        return False
+
+    def _apply_activation(values: Any, activation: str | None) -> Any:
+        name = (activation or "").lower()
+        if name in {"silu", "swish"}:
+            return F.silu(values)
+        if name == "gelu":
+            return F.gelu(values)
+        if name == "relu":
+            return F.relu(values)
+        if name == "tanh":
+            return torch.tanh(values)
+        return values
+
+    def _causal_conv1d_fn(x: Any, weight: Any, bias: Any = None, activation: str | None = None) -> Any:
+        kernel_size = int(weight.shape[-1])
+        # Depthwise causal conv equivalent to causal_conv1d kernels.
+        out = F.conv1d(x, weight.unsqueeze(1), bias=bias, groups=int(x.shape[1]), padding=kernel_size - 1)
+        out = out[..., : x.shape[-1]]
+        return _apply_activation(out, activation)
+
+    def _causal_conv1d_update(x: Any, conv_state: Any, weight: Any, bias: Any = None, activation: str | None = None) -> Any:
+        step = x.squeeze(-1) if getattr(x, "dim", lambda: 0)() == 3 else x
+        conv_state[..., :-1] = conv_state[..., 1:]
+        conv_state[..., -1] = step
+        out = (conv_state * weight.unsqueeze(0)).sum(dim=-1)
+        if bias is not None:
+            out = out + bias
+        return _apply_activation(out, activation)
+
+    patched = False
+    if hasattr(module, "is_fast_path_available"):
+        module.is_fast_path_available = False
+        patched = True
+    if hasattr(module, "causal_conv1d_fn"):
+        module.causal_conv1d_fn = _causal_conv1d_fn
+        patched = True
+    if hasattr(module, "causal_conv1d_update"):
+        module.causal_conv1d_update = _causal_conv1d_update
+        patched = True
+    return patched
 
 
 def resolve_attn_implementation(requested: str | None) -> str | None:

@@ -12,6 +12,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from common import (
+    apply_nemotron_blackwell_compat_fallback,
     answers_match,
     bootstrap_optional_python_paths,
     build_generation_config,
@@ -117,6 +118,8 @@ def load_stage1_model(config: dict[str, Any], stage1_dir: str):
         trust_remote_code=config["model"]["trust_remote_code"],
         attn_implementation=resolve_attn_implementation(config["model"]["attn_implementation"]),
     )
+    if apply_nemotron_blackwell_compat_fallback(base_model):
+        print("[info] Applied Nemotron Blackwell compatibility fallback kernels (GRPO path).")
     return PeftModel.from_pretrained(base_model, stage1_dir, is_trainable=True)
 
 

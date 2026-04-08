@@ -12,6 +12,7 @@ if str(ROOT) not in sys.path:
 
 from common import (
     TARGET_MODULES,
+    apply_nemotron_blackwell_compat_fallback,
     bootstrap_optional_python_paths,
     build_generation_config,
     load_config,
@@ -141,6 +142,8 @@ def run_unsloth(config: dict[str, Any], dataset, tokenizer, output_dir: str):
         target_modules=stage_config["target_modules"],
         use_gradient_checkpointing="unsloth",
     )
+    if apply_nemotron_blackwell_compat_fallback(model):
+        print("[info] Applied Nemotron Blackwell compatibility fallback kernels (Unsloth path).")
     if stage_config["loftq_init"]:
         replace_lora_weights_loftq(model)
 
@@ -173,6 +176,8 @@ def run_fallback(config: dict[str, Any], dataset, tokenizer, output_dir: str):
         trust_remote_code=config["model"]["trust_remote_code"],
         attn_implementation=resolve_attn_implementation(stage_config["attn_implementation"]),
     )
+    if apply_nemotron_blackwell_compat_fallback(model):
+        print("[info] Applied Nemotron Blackwell compatibility fallback kernels (TRL path).")
     model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=stage_config["gradient_checkpointing"])
     peft_config = LoraConfig(
         r=stage_config["lora_r"],
