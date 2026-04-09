@@ -23,6 +23,7 @@ from common import (
     resolve_model_id,
     save_json,
 )
+from progress import ProgressReporter
 
 
 def parse_args() -> argparse.Namespace:
@@ -118,6 +119,82 @@ def build_sft_trainer(model, tokenizer, config: dict[str, Any], output_dir: str,
     return SFTTrainer(**trainer_kwargs)
 
 
+def attach_progress_callback(trainer) -> None:
+    from transformers import TrainerCallback
+
+    reporter = ProgressReporter("stage1_sft")
+
+    class TrainingProgressCallback(TrainerCallback):
+        def __init__(self):
+            self.last_step = -1
+            self.last_logged_step = -1
+
+        def on_train_begin(self, args, state, control, **kwargs):
+            total_steps = int(getattr(state, "max_steps", 0) or getattr(args, "max_steps", 0) or 0)
+            reporter.update(
+                status="running",
+                message="stage1_training_started",
+                phase_percent=0.0,
+                current_step=0,
+                total_steps=total_steps,
+                epoch=float(getattr(state, "epoch", 0.0) or 0.0),
+                append_event=True,
+            )
+            return control
+
+        def on_step_end(self, args, state, control, **kwargs):
+            total_steps = int(getattr(state, "max_steps", 0) or 0)
+            current_step = int(getattr(state, "global_step", 0) or 0)
+            if current_step == self.last_step:
+                return control
+            self.last_step = current_step
+            phase_percent = (100.0 * current_step / total_steps) if total_steps else 0.0
+            reporter.update(
+                status="running",
+                message="stage1_training_step",
+                phase_percent=phase_percent,
+                current_step=current_step,
+                total_steps=total_steps,
+                epoch=float(getattr(state, "epoch", 0.0) or 0.0),
+                append_event=current_step in {1, total_steps} or current_step % 25 == 0,
+            )
+            return control
+
+        def on_log(self, args, state, control, logs=None, **kwargs):
+            current_step = int(getattr(state, "global_step", 0) or 0)
+            if current_step == self.last_logged_step:
+                return control
+            self.last_logged_step = current_step
+            total_steps = int(getattr(state, "max_steps", 0) or 0)
+            phase_percent = (100.0 * current_step / total_steps) if total_steps else None
+            reporter.update(
+                status="running",
+                message="stage1_training_log",
+                phase_percent=phase_percent,
+                current_step=current_step,
+                total_steps=total_steps,
+                epoch=float(getattr(state, "epoch", 0.0) or 0.0),
+                extra={"last_log": logs or {}},
+            )
+            return control
+
+        def on_train_end(self, args, state, control, **kwargs):
+            total_steps = int(getattr(state, "max_steps", 0) or getattr(state, "global_step", 0) or 0)
+            current_step = int(getattr(state, "global_step", 0) or total_steps)
+            reporter.update(
+                status="running",
+                message="stage1_training_finished",
+                phase_percent=100.0,
+                current_step=current_step,
+                total_steps=total_steps,
+                epoch=float(getattr(state, "epoch", 0.0) or 0.0),
+                append_event=True,
+            )
+            return control
+
+    trainer.add_callback(TrainingProgressCallback())
+
+
 def run_unsloth(config: dict[str, Any], dataset, tokenizer, output_dir: str):
     import torch
     from peft import replace_lora_weights_loftq
@@ -148,6 +225,7 @@ def run_unsloth(config: dict[str, Any], dataset, tokenizer, output_dir: str):
         replace_lora_weights_loftq(model)
 
     trainer = build_sft_trainer(model=model, tokenizer=tokenizer, config=config, output_dir=output_dir, dataset_rows=dataset)
+    attach_progress_callback(trainer)
     train_result = trainer.train()
     trainer.save_model(output_dir)
     tokenizer.save_pretrained(output_dir)
@@ -192,6 +270,7 @@ def run_fallback(config: dict[str, Any], dataset, tokenizer, output_dir: str):
         replace_lora_weights_loftq(model)
 
     trainer = build_sft_trainer(model=model, tokenizer=tokenizer, config=config, output_dir=output_dir, dataset_rows=dataset)
+    attach_progress_callback(trainer)
     train_result = trainer.train()
     trainer.save_model(output_dir)
     tokenizer.save_pretrained(output_dir)
@@ -227,6 +306,15 @@ def main() -> None:
             "model_id": model_id,
         },
     )
+    ProgressReporter("stage1_sft").update(
+        status="running",
+        message="stage1_setup_complete",
+        phase_percent=0.0,
+        current_step=0,
+        total_steps=0,
+        extra={"dataset_count": len(dataset), "output_dir": output_dir},
+        append_event=True,
+    )
 
     trainer = None
     train_result = None
@@ -251,6 +339,13 @@ def main() -> None:
             "log_history": trainer.state.log_history,
             "output_dir": output_dir,
         },
+    )
+    ProgressReporter("stage1_sft").update(
+        status="running",
+        message="stage1_summary_written",
+        phase_percent=100.0,
+        extra={"backend": backend, "output_dir": output_dir},
+        append_event=True,
     )
     print({"backend": backend, "output_dir": output_dir})
 
