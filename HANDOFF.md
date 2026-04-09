@@ -2,89 +2,120 @@
 
 ## Purpose
 
-This document records what has happened so far so another developer or agent can continue without reconstructing the full history.
+This document records the current state of the Kaggle competition work so another developer or agent can continue without rebuilding context from scratch.
 
 ## Objective
 
-Target competition:
-- nvidia-nemotron-model-reasoning-challenge
+- Competition: `nvidia-nemotron-model-reasoning-challenge`
+- Deliverable: a high-accuracy Nemotron reasoning LoRA adapter and submission package
+- Canonical repo: `Rohan5commit/NVIDIA-KAGGLE-COMPETITION`
 
-Target deliverable:
-- a high-accuracy LoRA adapter and submission package for Nemotron reasoning evaluation on Kaggle
+## Storage rule
 
-## Storage constraint
+Use GitHub plus Kaggle only.
 
-As of 2026-04-09, project storage for this effort is GitHub plus Kaggle only.
+Do not create local task workspaces or keep project artifacts locally.
 
-Do not create local task workspaces or keep project notes or artifacts locally.
+## Current Kaggle snapshot
 
-## Repo consolidation result
+Captured at `2026-04-09 20:26:41 +0800`
 
-Repo consolidation is complete.
+- Kernel: `rohansan1/nemotron-reasoning-lora-trainer`
+- Active version: `9`
+- Status: `RUNNING`
+- Machine shape: `NvidiaRtxPro6000`
 
-- Final repo: Rohan5commit/NVIDIA-KAGGLE-COMPETITION
-- The temporary duplicate repo was deleted
-- There is now one repo for this competition effort
+## Important operational constraint
 
-This repo is the one future agents and developers should use.
+Kaggle runtime network access could not resolve `github.com` during kernel execution.
 
-## Active Kaggle snapshot
+Observed in live kernel log:
+- `fatal: unable to access 'https://github.com/Rohan5commit/NVIDIA-KAGGLE-COMPETITION.git/': Could not resolve host: github.com`
 
-Captured at 2026-04-09 14:48:04 +08
+Implication:
+- do not rely on runtime `git clone` for hotfix delivery
+- the launcher must continue embedding patched GitHub file contents directly into the Kaggle kernel source
 
-- kernel: rohansan1/nemotron-reasoning-lora-trainer
-- version: 7
-- status: RUNNING
-- machine shape: NvidiaRtxPro6000
+## What is confirmed to work
 
-The active v7 run was not interrupted during repo consolidation.
+- The Kaggle kernel is pinned to `NvidiaRtxPro6000`.
+- Stage 1 SFT completed successfully in `v7`.
+- The repo has been consolidated into one canonical repo.
+- Progress telemetry code now exists in the repo:
+  - `progress.py`
+  - `training/kaggle_kernel_entry.py`
+  - `training/stage1_sft.py`
+  - `training/stage2_grpo.py`
+- The Kaggle launcher has been republished to inject updated repo files at runtime from an embedded patch payload.
 
-## What was done successfully
+## Failure chronology
 
-### Kaggle recovery and relaunch
+### v1 and v2
 
-- An emergency backup dataset was created to preserve state during stop and restart handling.
-- The Kaggle kernel was recreated and republished after earlier failed versions.
-- The launcher was updated to handle delayed Kaggle mounts and the newer /kaggle/input layout.
-- The kernel was pinned to NvidiaRtxPro6000 and that machine shape was later verified via the Kaggle API.
+- early launcher and runtime bootstrap failures
+- mount layout assumptions were wrong for the current Kaggle environment
 
-### Pipeline availability
+### v3 and v4
 
-- The competition repo codebase was functional enough to reach the stage-1 SFT path.
-- The pipeline includes data scripts, stage-1 SFT, stage-2 GRPO, evaluation, notebook, and adapter packaging scripts.
-- The code, config, notebook, processed dataset files, and summary files are present in this repo.
-- Repo consolidation completed so future work can continue from one repo only.
+- stage 1 training started
+- failed in Nemotron MoE
+- root issue: `index_add_` dtype mismatch
 
-## What failed
+### v5 and v6
 
-### Versions v1 and v2
+- progressed past the MoE dtype issue
+- failed in the PEFT LoRA bitsandbytes path
+- root issue: `fused_dropout not implemented for Byte`
 
-- early launcher and runtime failures
-- missing assumptions around input mount layout
-- repo sync and clone fallback issues
+### v7
 
-### Versions v3 and v4
+- stage 1 SFT completed successfully
+- training summary was written under the stage 1 outputs
+- then evaluation failed in `eval/local_eval.py`
+- root issue: `torch.AcceleratorError: CUDA error: no kernel image is available for execution on the device`
 
-- stage-1 training started but failed in Nemotron MoE
-- core error family: dtype mismatch in index_add
+### v8
 
-### Versions v5 and v6
+- intended to add progress reporting and the eval fallback fix
+- failed immediately after launch
+- root issue: `training/kaggle_kernel_entry.py` imported `progress.py` from the repo root without first inserting the repo root onto `sys.path`
+- exact failure: `ModuleNotFoundError: No module named 'progress'`
 
-- progressed past the earlier MoE issue
-- failed in the PEFT LoRA bitsandbytes forward path
-- core error: fused_dropout not implemented for Byte
+### v9
 
-## Why exact percent done was missing
+- includes the `eval/local_eval.py` fallback fix for the `v7` CUDA kernel issue
+- includes the `training/kaggle_kernel_entry.py` repo-root import fix for the `v8` failure
+- includes runtime progress telemetry
+- currently `RUNNING`
 
-Kaggle's normal kernel status API only exposed coarse states like RUNNING and ERROR for this script kernel. It did not provide live train-step counters. That forced status reporting to use forecasted progress instead of measured progress.
+## Files that matter most for the current run
 
-This should be fixed on the next run by writing explicit progress state from the training pipeline itself.
+- `common.py`
+- `progress.py`
+- `training/stage1_sft.py`
+- `training/stage2_grpo.py`
+- `training/kaggle_kernel_entry.py`
+- `eval/local_eval.py`
+- `submission/package_lora.py`
 
-## Required next actions
+## How the current Kaggle launcher works
 
-1. Wait for v7 to finish or fail.
-2. Capture v7 outputs from Kaggle.
-3. Store useful outputs in canonical storage only.
-4. Update any remaining Kaggle launcher references to the final repo name NVIDIA-KAGGLE-COMPETITION.
-5. Add exact progress reporting before launching the next Kaggle version.
-6. Continue work in this repo only.
+1. Wait for Kaggle input mounts.
+2. Materialize the repo from the bundled Kaggle runtime archive.
+3. Attempt GitHub sync, but tolerate failure.
+4. Overwrite critical repo files in the working tree from a patch payload embedded in the kernel source.
+5. Force runtime-safe config overrides:
+   - `attn_implementation: eager`
+   - `loftq_init: false`
+6. Run `training/kaggle_kernel_entry.py` in `stage1_fast` mode.
+
+## Immediate next actions
+
+1. Keep monitoring `v9`.
+2. Once session outputs become visible, confirm these files are being emitted:
+   - `nemotron-run-progress.json`
+   - `nemotron-run-progress-events.jsonl`
+   - `nemotron-kernel-run.log`
+3. If `v9` fails, inspect the latest kernel log before changing anything else.
+4. If `v9` reaches the eval stage successfully, continue to packaging and leaderboard submission work.
+5. Continue storing all continuity notes in this repo or on Kaggle only.
