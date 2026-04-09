@@ -4,73 +4,69 @@ This is the single canonical repo for the NVIDIA Nemotron Model Reasoning Challe
 
 ## Repo status
 
-- Canonical repo: Rohan5commit/NVIDIA-KAGGLE-COMPETITION
-- Repo consolidation completed on 2026-04-09
-- The temporary duplicate repo was deleted
-- There is now one competition repo to use for this effort
+- Canonical repo: `Rohan5commit/NVIDIA-KAGGLE-COMPETITION`
+- This is the only repo that should be used for this competition effort
+- Storage rule: use GitHub plus Kaggle only, not local task workspaces
 
 ## Goal
 
-Build a high-accuracy LoRA adapter and submission pipeline for the Kaggle NVIDIA Nemotron Model Reasoning Challenge using the Nemotron-3-Nano-30B model family.
+Build a high-accuracy LoRA adapter and submission pipeline for the Kaggle NVIDIA Nemotron Model Reasoning Challenge using Nemotron-3-Nano-30B.
 
 ## Live Kaggle snapshot
 
-Snapshot taken at 2026-04-09 14:48:04 +08
+Snapshot taken at `2026-04-09 20:26:41 +0800`
 
-- Kernel: rohansan1/nemotron-reasoning-lora-trainer
-- Kernel version: 7
-- Status at snapshot time: RUNNING
-- GPU shape: NvidiaRtxPro6000
-- Competition: nvidia-nemotron-model-reasoning-challenge
+- Kernel: `rohansan1/nemotron-reasoning-lora-trainer`
+- Active kernel version: `9`
+- Status at snapshot time: `RUNNING`
+- GPU shape: `NvidiaRtxPro6000`
+- Competition: `nvidia-nemotron-model-reasoning-challenge`
 - Kaggle URL: https://www.kaggle.com/code/rohansan1/nemotron-reasoning-lora-trainer
 
-Important:
-- v7 was not interrupted during repo consolidation
-- future work should continue in this repo only
+## What has worked
 
-## What is in this repo
+- Runtime asset discovery was fixed for Kaggle's current `/kaggle/input` mount layout.
+- The kernel is explicitly pinned to `NvidiaRtxPro6000`.
+- Stage 1 SFT completed successfully in `v7`.
+- Repo consolidation is complete and future work now continues from this repo only.
+- Explicit progress telemetry was added to the pipeline for future status checks.
+- The Kaggle launcher now embeds selected GitHub repo files directly into the kernel source before execution so the run can pick up hotfixes without relying on local files.
 
-This repo contains the competition source, config, notebook, runtime launcher files, evaluation code, packaging code, artifact summaries, and processed dataset files needed for continuity.
+## What failed
 
-Key paths include:
+- `v1` and `v2`: launcher and runtime bootstrap failures.
+- `v3` and `v4`: Nemotron MoE `index_add_` dtype mismatch.
+- `v5` and `v6`: PEFT LoRA bitsandbytes path failed with `fused_dropout not implemented for Byte`.
+- `v7`: Stage 1 finished, then evaluation failed in `eval/local_eval.py` with `torch.AcceleratorError: CUDA error: no kernel image is available for execution on the device`.
+- `v8`: the new progress instrumentation launch failed immediately because `training/kaggle_kernel_entry.py` could not import repo-root `progress.py`.
 
-- common.py
-- data/*.py
-- data/processed/*.jsonl
-- training/*.py
-- eval/local_eval.py
-- submission/package_lora.py
-- notebooks/solution_writeup.ipynb
-- training/train_config.yaml
-- artifacts/*.json
+## Current run intent
 
-## What has worked so far
+`v9` is the first run that includes both of these fixes:
 
-- The private Kaggle kernel was recreated and republished through multiple versions.
-- The machine shape was explicitly pinned and verified as NvidiaRtxPro6000.
-- Runtime asset discovery was improved for the newer Kaggle input mount layout.
-- Repo archive fallback worked when GitHub access inside Kaggle failed.
-- The pipeline advanced far enough to reach stage-1 training instead of failing during early bootstrap.
-- Compatibility fixes were identified for Nemotron plus PEFT plus bitsandbytes runtime issues.
-- The current v7 run passed the earlier failure window and was still running at the snapshot time above.
-- Repo consolidation is complete and all future work can continue in this single repo.
+- the eval fallback patch in `eval/local_eval.py` for the Nemotron CUDA kernel issue seen in `v7`
+- the repo-root import path fix in `training/kaggle_kernel_entry.py` after the `v8` failure
 
-## What has not worked so far
+## Important runtime constraint
 
-- v1 and v2 failed during earlier launcher and runtime setup.
-- One earlier run landed on the wrong accelerator class before the machine shape was pinned correctly.
-- v3 and v4 reached stage-1 but failed inside Nemotron MoE with an index_add dtype mismatch.
-- v5 and v6 progressed further but failed in the PEFT LoRA bitsandbytes path with fused_dropout not implemented for Byte.
-- Kaggle script kernels did not expose reliable live train-step counters through the normal status endpoint, so exact percent done was not available from the active run.
+Kaggle was not able to resolve `github.com` during live kernel execution. Because of that, runtime `git clone` should be treated as unreliable. The current launcher strategy is:
 
-## Next actions after the active run ends
+1. materialize the bundled runtime archive from Kaggle inputs
+2. overwrite critical repo files at runtime from a patch payload embedded in the kernel source
+3. keep using Kaggle-hosted assets for the rest of the pipeline
 
-1. Capture the final outputs of v7 from Kaggle.
-2. Commit or export useful artifacts into this repo or Kaggle from this repo, not to local disk.
-3. Update any remaining launcher or repo references so the next run uses this repo name directly.
-4. Add explicit run progress telemetry for the next Kaggle version.
-5. Keep all future task files and code in this repo or on Kaggle only.
+## Key files
 
-## Storage rule
+- `common.py`
+- `progress.py`
+- `training/stage1_sft.py`
+- `training/stage2_grpo.py`
+- `training/kaggle_kernel_entry.py`
+- `eval/local_eval.py`
+- `submission/package_lora.py`
+- `training/train_config.yaml`
+- `notebooks/solution_writeup.ipynb`
 
-Do not create local task workspaces or keep project artifacts on the local machine for this effort. Future code, notes, and handoff files must live in this repo or on Kaggle.
+## Operating rule
+
+Do not create local task workspaces or store project artifacts locally for this effort. Keep task code, notes, and state in GitHub and Kaggle only.
