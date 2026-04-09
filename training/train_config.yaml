@@ -178,6 +178,9 @@ stage1_sft:
   attn_implementation: flash_attention_2
   logging_steps: 5
   save_strategy: epoch
+  save_total_limit: 4
+  checkpoint_interval_minutes: 15
+  resume_from_last_checkpoint: true
   eval_strategy: "no"
   gradient_checkpointing: true
 
@@ -197,6 +200,11 @@ stage2_grpo:
   vllm_gpu_memory_utilization: 0.92
   offload_optimizer: false
   offload_reference_model: false
+  save_strategy: steps
+  save_steps: 200
+  save_total_limit: 4
+  checkpoint_interval_minutes: 15
+  resume_from_last_checkpoint: true
 
 evaluation:
   deterministic_temperature: 0.0
