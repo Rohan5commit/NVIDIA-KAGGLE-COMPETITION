@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import inspect
 import sys
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -81,6 +83,7 @@ def training_args(config: dict[str, Any], output_dir: str):
         save_strategy=stage_config["save_strategy"],
         eval_strategy=stage_config["eval_strategy"],
         gradient_checkpointing=stage_config["gradient_checkpointing"],
+        save_total_limit=stage_config.get("save_total_limit"),
         max_length=stage_config["max_seq_length"],
         max_seq_length=stage_config["max_seq_length"],
         dataset_text_field="text",
@@ -98,6 +101,20 @@ def load_tokenizer(model_id: str, trust_remote_code: bool):
         tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "right"
     return tokenizer
+
+
+def resolve_resume_checkpoint(output_dir: str, enabled: bool = True) -> str | None:
+    if not enabled:
+        return None
+    from transformers.trainer_utils import get_last_checkpoint
+
+    output_path = Path(output_dir)
+    if not output_path.exists():
+        return None
+    try:
+        return get_last_checkpoint(str(output_path))
+    except Exception:
+        return None
 
 
 def build_sft_trainer(model, tokenizer, config: dict[str, Any], output_dir: str, dataset_rows: list[dict[str, Any]]):
@@ -119,15 +136,27 @@ def build_sft_trainer(model, tokenizer, config: dict[str, Any], output_dir: str,
     return SFTTrainer(**trainer_kwargs)
 
 
-def attach_progress_callback(trainer) -> None:
+def attach_progress_callback(trainer, *, output_dir: str, checkpoint_interval_minutes: float = 15.0) -> None:
     from transformers import TrainerCallback
 
     reporter = ProgressReporter("stage1_sft")
+    checkpoint_interval_seconds = max(float(checkpoint_interval_minutes), 0.0) * 60.0
 
     class TrainingProgressCallback(TrainerCallback):
         def __init__(self):
             self.last_step = -1
             self.last_logged_step = -1
+            self.last_checkpoint_step = -1
+            self.next_checkpoint_time = time.time() + checkpoint_interval_seconds if checkpoint_interval_seconds else None
+
+        def _next_checkpoint_due_utc(self) -> str | None:
+            if self.next_checkpoint_time is None:
+                return None
+            return datetime.fromtimestamp(self.next_checkpoint_time, tz=timezone.utc).isoformat()
+
+        def _bump_checkpoint_deadline(self, now: float) -> None:
+            if checkpoint_interval_seconds:
+                self.next_checkpoint_time = now + checkpoint_interval_seconds
 
         def on_train_begin(self, args, state, control, **kwargs):
             total_steps = int(getattr(state, "max_steps", 0) or getattr(args, "max_steps", 0) or 0)
@@ -139,6 +168,11 @@ def attach_progress_callback(trainer) -> None:
                 total_steps=total_steps,
                 epoch=float(getattr(state, "epoch", 0.0) or 0.0),
                 append_event=True,
+                extra={
+                    "checkpoint_interval_minutes": checkpoint_interval_minutes,
+                    "next_checkpoint_due_utc": self._next_checkpoint_due_utc(),
+                    "output_dir": output_dir,
+                },
             )
             return control
 
@@ -157,6 +191,48 @@ def attach_progress_callback(trainer) -> None:
                 total_steps=total_steps,
                 epoch=float(getattr(state, "epoch", 0.0) or 0.0),
                 append_event=current_step in {1, total_steps} or current_step % 25 == 0,
+            )
+
+            now = time.time()
+            checkpoint_due = self.next_checkpoint_time is not None and now >= self.next_checkpoint_time
+            if checkpoint_due and current_step > 0 and current_step != self.last_checkpoint_step:
+                self.last_checkpoint_step = current_step
+                control.should_save = True
+                self._bump_checkpoint_deadline(now)
+                reporter.update(
+                    status="running",
+                    message="stage1_checkpoint_requested",
+                    phase_percent=phase_percent,
+                    current_step=current_step,
+                    total_steps=total_steps,
+                    epoch=float(getattr(state, "epoch", 0.0) or 0.0),
+                    append_event=True,
+                    extra={
+                        "checkpoint_interval_minutes": checkpoint_interval_minutes,
+                        "next_checkpoint_due_utc": self._next_checkpoint_due_utc(),
+                        "output_dir": output_dir,
+                    },
+                )
+            return control
+
+        def on_save(self, args, state, control, **kwargs):
+            total_steps = int(getattr(state, "max_steps", 0) or 0)
+            current_step = int(getattr(state, "global_step", 0) or 0)
+            phase_percent = (100.0 * current_step / total_steps) if total_steps else None
+            checkpoint_dir = Path(output_dir) / f"checkpoint-{current_step}"
+            reporter.update(
+                status="running",
+                message="stage1_checkpoint_saved",
+                phase_percent=phase_percent,
+                current_step=current_step,
+                total_steps=total_steps,
+                epoch=float(getattr(state, "epoch", 0.0) or 0.0),
+                append_event=True,
+                extra={
+                    "latest_checkpoint": str(checkpoint_dir),
+                    "next_checkpoint_due_utc": self._next_checkpoint_due_utc(),
+                    "output_dir": output_dir,
+                },
             )
             return control
 
@@ -195,7 +271,7 @@ def attach_progress_callback(trainer) -> None:
     trainer.add_callback(TrainingProgressCallback())
 
 
-def run_unsloth(config: dict[str, Any], dataset, tokenizer, output_dir: str):
+def run_unsloth(config: dict[str, Any], dataset, tokenizer, output_dir: str, resume_checkpoint: str | None):
     import torch
     from peft import replace_lora_weights_loftq
     from unsloth import FastLanguageModel
@@ -225,14 +301,18 @@ def run_unsloth(config: dict[str, Any], dataset, tokenizer, output_dir: str):
         replace_lora_weights_loftq(model)
 
     trainer = build_sft_trainer(model=model, tokenizer=tokenizer, config=config, output_dir=output_dir, dataset_rows=dataset)
-    attach_progress_callback(trainer)
-    train_result = trainer.train()
+    attach_progress_callback(
+        trainer,
+        output_dir=output_dir,
+        checkpoint_interval_minutes=float(stage_config.get("checkpoint_interval_minutes", 15)),
+    )
+    train_result = trainer.train(resume_from_checkpoint=resume_checkpoint) if resume_checkpoint else trainer.train()
     trainer.save_model(output_dir)
     tokenizer.save_pretrained(output_dir)
     return trainer, train_result
 
 
-def run_fallback(config: dict[str, Any], dataset, tokenizer, output_dir: str):
+def run_fallback(config: dict[str, Any], dataset, tokenizer, output_dir: str, resume_checkpoint: str | None):
     import torch
     from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training, replace_lora_weights_loftq
     from transformers import AutoModelForCausalLM, BitsAndBytesConfig
@@ -270,8 +350,12 @@ def run_fallback(config: dict[str, Any], dataset, tokenizer, output_dir: str):
         replace_lora_weights_loftq(model)
 
     trainer = build_sft_trainer(model=model, tokenizer=tokenizer, config=config, output_dir=output_dir, dataset_rows=dataset)
-    attach_progress_callback(trainer)
-    train_result = trainer.train()
+    attach_progress_callback(
+        trainer,
+        output_dir=output_dir,
+        checkpoint_interval_minutes=float(stage_config.get("checkpoint_interval_minutes", 15)),
+    )
+    train_result = trainer.train(resume_from_checkpoint=resume_checkpoint) if resume_checkpoint else trainer.train()
     trainer.save_model(output_dir)
     tokenizer.save_pretrained(output_dir)
     return trainer, train_result
@@ -316,16 +400,38 @@ def main() -> None:
         append_event=True,
     )
 
+    stage_config = config["stage1_sft"]
+    checkpoint_interval_minutes = float(stage_config.get("checkpoint_interval_minutes", 15))
+    resume_checkpoint = resolve_resume_checkpoint(
+        output_dir,
+        enabled=bool(stage_config.get("resume_from_last_checkpoint", True)),
+    )
+    if resume_checkpoint:
+        print(f"[info] Resuming Stage 1 from checkpoint: {resume_checkpoint}")
+        ProgressReporter("stage1_sft").update(
+            status="running",
+            message="stage1_resume_detected",
+            phase_percent=0.0,
+            current_step=0,
+            total_steps=0,
+            extra={
+                "resume_checkpoint": resume_checkpoint,
+                "checkpoint_interval_minutes": checkpoint_interval_minutes,
+                "output_dir": output_dir,
+            },
+            append_event=True,
+        )
+
     trainer = None
     train_result = None
     if not args.force_fallback:
         try:
-            trainer, train_result = run_unsloth(config, dataset, tokenizer, output_dir)
+            trainer, train_result = run_unsloth(config, dataset, tokenizer, output_dir, resume_checkpoint)
             backend = "unsloth"
         except Exception as error:
             print(f"[warn] Unsloth path failed, falling back to TRL: {error}")
     if trainer is None:
-        trainer, train_result = run_fallback(config, dataset, tokenizer, output_dir)
+        trainer, train_result = run_fallback(config, dataset, tokenizer, output_dir, resume_checkpoint)
         backend = "trl_fallback"
 
     save_json(
@@ -338,6 +444,8 @@ def main() -> None:
             "train_result": getattr(train_result, "metrics", {}),
             "log_history": trainer.state.log_history,
             "output_dir": output_dir,
+            "resume_checkpoint": resume_checkpoint,
+            "checkpoint_interval_minutes": checkpoint_interval_minutes,
         },
     )
     ProgressReporter("stage1_sft").update(
