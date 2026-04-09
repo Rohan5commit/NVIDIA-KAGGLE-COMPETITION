@@ -27,6 +27,7 @@ from common import (
     save_json,
     token_count,
 )
+from progress import ProgressReporter
 
 
 def parse_args() -> argparse.Namespace:
@@ -171,6 +172,82 @@ def reward_no_answer_leakage(completions, ground_truth, **kwargs) -> list[float]
     return rewards
 
 
+def attach_progress_callback(trainer) -> None:
+    from transformers import TrainerCallback
+
+    reporter = ProgressReporter("stage2_grpo")
+
+    class TrainingProgressCallback(TrainerCallback):
+        def __init__(self):
+            self.last_step = -1
+            self.last_logged_step = -1
+
+        def on_train_begin(self, args, state, control, **kwargs):
+            total_steps = int(getattr(state, "max_steps", 0) or getattr(args, "max_steps", 0) or 0)
+            reporter.update(
+                status="running",
+                message="stage2_training_started",
+                phase_percent=0.0,
+                current_step=0,
+                total_steps=total_steps,
+                epoch=float(getattr(state, "epoch", 0.0) or 0.0),
+                append_event=True,
+            )
+            return control
+
+        def on_step_end(self, args, state, control, **kwargs):
+            total_steps = int(getattr(state, "max_steps", 0) or 0)
+            current_step = int(getattr(state, "global_step", 0) or 0)
+            if current_step == self.last_step:
+                return control
+            self.last_step = current_step
+            phase_percent = (100.0 * current_step / total_steps) if total_steps else 0.0
+            reporter.update(
+                status="running",
+                message="stage2_training_step",
+                phase_percent=phase_percent,
+                current_step=current_step,
+                total_steps=total_steps,
+                epoch=float(getattr(state, "epoch", 0.0) or 0.0),
+                append_event=current_step in {1, total_steps} or current_step % 10 == 0,
+            )
+            return control
+
+        def on_log(self, args, state, control, logs=None, **kwargs):
+            current_step = int(getattr(state, "global_step", 0) or 0)
+            if current_step == self.last_logged_step:
+                return control
+            self.last_logged_step = current_step
+            total_steps = int(getattr(state, "max_steps", 0) or 0)
+            phase_percent = (100.0 * current_step / total_steps) if total_steps else None
+            reporter.update(
+                status="running",
+                message="stage2_training_log",
+                phase_percent=phase_percent,
+                current_step=current_step,
+                total_steps=total_steps,
+                epoch=float(getattr(state, "epoch", 0.0) or 0.0),
+                extra={"last_log": logs or {}},
+            )
+            return control
+
+        def on_train_end(self, args, state, control, **kwargs):
+            total_steps = int(getattr(state, "max_steps", 0) or getattr(state, "global_step", 0) or 0)
+            current_step = int(getattr(state, "global_step", 0) or total_steps)
+            reporter.update(
+                status="running",
+                message="stage2_training_finished",
+                phase_percent=100.0,
+                current_step=current_step,
+                total_steps=total_steps,
+                epoch=float(getattr(state, "epoch", 0.0) or 0.0),
+                append_event=True,
+            )
+            return control
+
+    trainer.add_callback(TrainingProgressCallback())
+
+
 def main() -> None:
     args = parse_args()
     config = load_config(args.config)
@@ -185,6 +262,15 @@ def main() -> None:
     model_id = resolve_model_id(config)
     tokenizer = load_tokenizer(model_id, config["model"]["trust_remote_code"])
     dataset_rows = build_dataset_rows(config, tokenizer, records)
+    ProgressReporter("stage2_grpo").update(
+        status="running",
+        message="stage2_setup_complete",
+        phase_percent=0.0,
+        current_step=0,
+        total_steps=0,
+        extra={"dataset_count": len(dataset_rows), "output_dir": output_dir},
+        append_event=True,
+    )
 
     from datasets import Dataset
     from trl import GRPOTrainer
@@ -208,6 +294,7 @@ def main() -> None:
         trainer_kwargs["tokenizer"] = tokenizer
 
     trainer = GRPOTrainer(**trainer_kwargs)
+    attach_progress_callback(trainer)
     train_result = trainer.train()
     trainer.save_model(output_dir)
     tokenizer.save_pretrained(output_dir)
@@ -224,6 +311,13 @@ def main() -> None:
             "output_dir": output_dir,
             "dataset_count": len(dataset_rows),
         },
+    )
+    ProgressReporter("stage2_grpo").update(
+        status="running",
+        message="stage2_summary_written",
+        phase_percent=100.0,
+        extra={"output_dir": output_dir, "dataset_count": len(dataset_rows)},
+        append_event=True,
     )
     print({"output_dir": output_dir, "dataset_count": len(dataset_rows)})
 
