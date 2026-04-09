@@ -1,14 +1,13 @@
 # NVIDIA KAGGLE COMPETITION
 
-This is the canonical continuation repo for the NVIDIA Nemotron Model Reasoning Challenge work.
+This is the single canonical repo for the NVIDIA Nemotron Model Reasoning Challenge work.
 
-## Canonical repo status
+## Repo status
 
-- Canonical repo for all future work: Rohan5commit/NVIDIA-KAGGLE-COMPETITION
-- Legacy repo that already existed: Rohan5commit/nemotron-reasoning-lora
-- There are currently two private competition-related repos on the account.
-- Until the active Kaggle v7 run finishes, treat nemotron-reasoning-lora as legacy and read-only history.
-- All future work should go here.
+- Canonical repo: Rohan5commit/NVIDIA-KAGGLE-COMPETITION
+- Repo consolidation completed on 2026-04-09
+- The temporary duplicate repo was deleted
+- There is now one competition repo to use for this effort
 
 ## Goal
 
@@ -25,14 +24,19 @@ Snapshot taken at 2026-04-09 14:48:04 +08
 - Competition: nvidia-nemotron-model-reasoning-challenge
 - Kaggle URL: https://www.kaggle.com/code/rohansan1/nemotron-reasoning-lora-trainer
 
+Important:
+- v7 was not interrupted during repo consolidation
+- future work should continue in this repo only
+
 ## What is in this repo
 
-This repo now contains the migrated source, config, notebook, runtime launcher files, evaluation code, packaging code, and artifact summaries from the legacy repo.
+This repo contains the competition source, config, notebook, runtime launcher files, evaluation code, packaging code, artifact summaries, and processed dataset files needed for continuity.
 
-Included paths now cover:
+Key paths include:
 
 - common.py
 - data/*.py
+- data/processed/*.jsonl
 - training/*.py
 - eval/local_eval.py
 - submission/package_lora.py
@@ -40,27 +44,16 @@ Included paths now cover:
 - training/train_config.yaml
 - artifacts/*.json
 
-## What is not yet in this repo
-
-The large processed dataset files from the legacy repo were intentionally not mirrored during the remote-only migration:
-
-- data/processed/curated_full.jsonl
-- data/processed/synthetic_seed_candidates.jsonl
-- data/processed/train_grpo.jsonl
-- data/processed/train_sft.jsonl
-- data/processed/validation.jsonl
-
-Those can be regenerated from code or moved from Kaggle outputs and datasets after the active run finishes.
-
 ## What has worked so far
 
 - The private Kaggle kernel was recreated and republished through multiple versions.
-- The machine shape was explicitly pinned and later verified as NvidiaRtxPro6000.
+- The machine shape was explicitly pinned and verified as NvidiaRtxPro6000.
 - Runtime asset discovery was improved for the newer Kaggle input mount layout.
 - Repo archive fallback worked when GitHub access inside Kaggle failed.
 - The pipeline advanced far enough to reach stage-1 training instead of failing during early bootstrap.
 - Compatibility fixes were identified for Nemotron plus PEFT plus bitsandbytes runtime issues.
 - The current v7 run passed the earlier failure window and was still running at the snapshot time above.
+- Repo consolidation is complete and all future work can continue in this single repo.
 
 ## What has not worked so far
 
@@ -74,9 +67,9 @@ Those can be regenerated from code or moved from Kaggle outputs and datasets aft
 
 1. Capture the final outputs of v7 from Kaggle.
 2. Commit or export useful artifacts into this repo or Kaggle from this repo, not to local disk.
-3. Repoint remaining launcher or repo references so the next run uses NVIDIA-KAGGLE-COMPETITION instead of the legacy repo.
+3. Update any remaining launcher or repo references so the next run uses this repo name directly.
 4. Add explicit run progress telemetry for the next Kaggle version.
-5. Decide whether to archive the old nemotron-reasoning-lora repo after v7 is no longer needed.
+5. Keep all future task files and code in this repo or on Kaggle only.
 
 ## Storage rule
 
