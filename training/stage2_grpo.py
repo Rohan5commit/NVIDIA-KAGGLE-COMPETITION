@@ -4,6 +4,8 @@ import argparse
 import importlib.util
 import inspect
 import sys
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -62,6 +64,9 @@ def grpo_args(config: dict[str, Any], output_dir: str):
         vllm_gpu_memory_utilization=stage_config["vllm_gpu_memory_utilization"],
         offload_optimizer=stage_config["offload_optimizer"],
         offload_reference_model=stage_config["offload_reference_model"],
+        save_total_limit=stage_config.get("save_total_limit"),
+        save_strategy=stage_config.get("save_strategy", "steps"),
+        save_steps=stage_config.get("save_steps", 500),
         vllm_enable_sleep_mode=False,
         logging_steps=1,
         report_to=[],
@@ -77,6 +82,20 @@ def load_tokenizer(model_id: str, trust_remote_code: bool):
         tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "left"
     return tokenizer
+
+
+def resolve_resume_checkpoint(output_dir: str, enabled: bool = True) -> str | None:
+    if not enabled:
+        return None
+    from transformers.trainer_utils import get_last_checkpoint
+
+    output_path = Path(output_dir)
+    if not output_path.exists():
+        return None
+    try:
+        return get_last_checkpoint(str(output_path))
+    except Exception:
+        return None
 
 
 def build_dataset_rows(config: dict[str, Any], tokenizer, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -172,15 +191,27 @@ def reward_no_answer_leakage(completions, ground_truth, **kwargs) -> list[float]
     return rewards
 
 
-def attach_progress_callback(trainer) -> None:
+def attach_progress_callback(trainer, *, output_dir: str, checkpoint_interval_minutes: float = 15.0) -> None:
     from transformers import TrainerCallback
 
     reporter = ProgressReporter("stage2_grpo")
+    checkpoint_interval_seconds = max(float(checkpoint_interval_minutes), 0.0) * 60.0
 
     class TrainingProgressCallback(TrainerCallback):
         def __init__(self):
             self.last_step = -1
             self.last_logged_step = -1
+            self.last_checkpoint_step = -1
+            self.next_checkpoint_time = time.time() + checkpoint_interval_seconds if checkpoint_interval_seconds else None
+
+        def _next_checkpoint_due_utc(self) -> str | None:
+            if self.next_checkpoint_time is None:
+                return None
+            return datetime.fromtimestamp(self.next_checkpoint_time, tz=timezone.utc).isoformat()
+
+        def _bump_checkpoint_deadline(self, now: float) -> None:
+            if checkpoint_interval_seconds:
+                self.next_checkpoint_time = now + checkpoint_interval_seconds
 
         def on_train_begin(self, args, state, control, **kwargs):
             total_steps = int(getattr(state, "max_steps", 0) or getattr(args, "max_steps", 0) or 0)
@@ -192,6 +223,11 @@ def attach_progress_callback(trainer) -> None:
                 total_steps=total_steps,
                 epoch=float(getattr(state, "epoch", 0.0) or 0.0),
                 append_event=True,
+                extra={
+                    "checkpoint_interval_minutes": checkpoint_interval_minutes,
+                    "next_checkpoint_due_utc": self._next_checkpoint_due_utc(),
+                    "output_dir": output_dir,
+                },
             )
             return control
 
@@ -210,6 +246,48 @@ def attach_progress_callback(trainer) -> None:
                 total_steps=total_steps,
                 epoch=float(getattr(state, "epoch", 0.0) or 0.0),
                 append_event=current_step in {1, total_steps} or current_step % 10 == 0,
+            )
+
+            now = time.time()
+            checkpoint_due = self.next_checkpoint_time is not None and now >= self.next_checkpoint_time
+            if checkpoint_due and current_step > 0 and current_step != self.last_checkpoint_step:
+                self.last_checkpoint_step = current_step
+                control.should_save = True
+                self._bump_checkpoint_deadline(now)
+                reporter.update(
+                    status="running",
+                    message="stage2_checkpoint_requested",
+                    phase_percent=phase_percent,
+                    current_step=current_step,
+                    total_steps=total_steps,
+                    epoch=float(getattr(state, "epoch", 0.0) or 0.0),
+                    append_event=True,
+                    extra={
+                        "checkpoint_interval_minutes": checkpoint_interval_minutes,
+                        "next_checkpoint_due_utc": self._next_checkpoint_due_utc(),
+                        "output_dir": output_dir,
+                    },
+                )
+            return control
+
+        def on_save(self, args, state, control, **kwargs):
+            total_steps = int(getattr(state, "max_steps", 0) or 0)
+            current_step = int(getattr(state, "global_step", 0) or 0)
+            phase_percent = (100.0 * current_step / total_steps) if total_steps else None
+            checkpoint_dir = Path(output_dir) / f"checkpoint-{current_step}"
+            reporter.update(
+                status="running",
+                message="stage2_checkpoint_saved",
+                phase_percent=phase_percent,
+                current_step=current_step,
+                total_steps=total_steps,
+                epoch=float(getattr(state, "epoch", 0.0) or 0.0),
+                append_event=True,
+                extra={
+                    "latest_checkpoint": str(checkpoint_dir),
+                    "next_checkpoint_due_utc": self._next_checkpoint_due_utc(),
+                    "output_dir": output_dir,
+                },
             )
             return control
 
@@ -272,6 +350,28 @@ def main() -> None:
         append_event=True,
     )
 
+    stage_config = config["stage2_grpo"]
+    checkpoint_interval_minutes = float(stage_config.get("checkpoint_interval_minutes", 15))
+    resume_checkpoint = resolve_resume_checkpoint(
+        output_dir,
+        enabled=bool(stage_config.get("resume_from_last_checkpoint", True)),
+    )
+    if resume_checkpoint:
+        print(f"[info] Resuming Stage 2 from checkpoint: {resume_checkpoint}")
+        ProgressReporter("stage2_grpo").update(
+            status="running",
+            message="stage2_resume_detected",
+            phase_percent=0.0,
+            current_step=0,
+            total_steps=0,
+            extra={
+                "resume_checkpoint": resume_checkpoint,
+                "checkpoint_interval_minutes": checkpoint_interval_minutes,
+                "output_dir": output_dir,
+            },
+            append_event=True,
+        )
+
     from datasets import Dataset
     from trl import GRPOTrainer
 
@@ -294,8 +394,12 @@ def main() -> None:
         trainer_kwargs["tokenizer"] = tokenizer
 
     trainer = GRPOTrainer(**trainer_kwargs)
-    attach_progress_callback(trainer)
-    train_result = trainer.train()
+    attach_progress_callback(
+        trainer,
+        output_dir=output_dir,
+        checkpoint_interval_minutes=checkpoint_interval_minutes,
+    )
+    train_result = trainer.train(resume_from_checkpoint=resume_checkpoint) if resume_checkpoint else trainer.train()
     trainer.save_model(output_dir)
     tokenizer.save_pretrained(output_dir)
 
@@ -310,6 +414,8 @@ def main() -> None:
             "log_history": trainer.state.log_history,
             "output_dir": output_dir,
             "dataset_count": len(dataset_rows),
+            "resume_checkpoint": resume_checkpoint,
+            "checkpoint_interval_minutes": checkpoint_interval_minutes,
         },
     )
     ProgressReporter("stage2_grpo").update(
