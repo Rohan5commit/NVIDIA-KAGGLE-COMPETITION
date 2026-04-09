@@ -298,6 +298,34 @@ def apply_nemotron_blackwell_compat_fallback(model: Any) -> bool:
                 patched = True
             except Exception:
                 pass
+    # Nemotron MoE can emit float source tensors for index_add_ while the
+    # destination accumulator is bf16. Align dtypes to avoid runtime failures.
+    if not hasattr(torch.Tensor, "_nemotron_index_add_dtype_patch"):
+        _orig_index_add_ = torch.Tensor.index_add_
+
+        def _nemotron_index_add_dtype_patch(self, dim, index, source, *args, **kwargs):
+            if isinstance(source, torch.Tensor) and self.dtype != source.dtype:
+                if self.is_floating_point() and source.is_floating_point():
+                    source = source.to(self.dtype)
+            return _orig_index_add_(self, dim, index, source, *args, **kwargs)
+
+        torch.Tensor.index_add_ = _nemotron_index_add_dtype_patch
+        torch.Tensor._nemotron_index_add_dtype_patch = True
+
+    # Some PEFT+bnb LoRA paths can feed integer tensors into dropout.
+    # Cast non-floating tensors before dropout to avoid fused kernel errors.
+    if not hasattr(F, "_nemotron_safe_dropout_patch"):
+        _orig_dropout = F.dropout
+
+        def _nemotron_safe_dropout_patch(input, p=0.5, training=True, inplace=False):
+            if isinstance(input, torch.Tensor) and not input.is_floating_point():
+                target_dtype = torch.bfloat16 if input.is_cuda else torch.float32
+                input = input.to(target_dtype)
+            return _orig_dropout(input, p=p, training=training, inplace=inplace)
+
+        F.dropout = _nemotron_safe_dropout_patch
+        F._nemotron_safe_dropout_patch = True
+
     return patched
 
 
