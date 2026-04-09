@@ -4,10 +4,13 @@ import argparse
 import json
 import os
 import shutil
+import sys
 import tarfile
 from datetime import datetime, timezone
 from pathlib import Path
 import subprocess
+
+from progress import ProgressReporter
 
 
 ASSET_DATASET_ROOT = Path("/kaggle/input/nemotron-runtime-assets")
@@ -15,6 +18,8 @@ DEFAULT_REPO_ARCHIVE = ASSET_DATASET_ROOT / "nemotron-reasoning-lora.tar.gz"
 DEFAULT_WORKING_REPO = Path("/kaggle/working/nemotron-reasoning-lora")
 LOG_PATH = Path("/kaggle/working/nemotron-kernel-run.log")
 STATUS_PATH = Path("/kaggle/working/nemotron-kernel-status.json")
+PROGRESS_PATH = Path("/kaggle/working/nemotron-run-progress.json")
+PROGRESS_EVENTS_PATH = Path("/kaggle/working/nemotron-run-progress-events.jsonl")
 
 
 def parse_args() -> argparse.Namespace:
@@ -35,6 +40,29 @@ def ensure_repo(repo_archive: Path, working_repo: Path) -> None:
         archive.extractall(working_repo.parent)
 
 
+def command_name(command: list[str]) -> str:
+    return " ".join(command)
+
+
+def run_and_tee(command: list[str], working_repo: Path, env: dict[str, str], log_handle) -> None:
+    process = subprocess.Popen(
+        command,
+        cwd=str(working_repo),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    assert process.stdout is not None
+    for line in process.stdout:
+        sys.stdout.write(line)
+        log_handle.write(line)
+    process.wait()
+    if process.returncode:
+        raise subprocess.CalledProcessError(process.returncode, command)
+
+
 def main() -> None:
     args = parse_args()
     asset_root = Path(args.asset_root)
@@ -48,6 +76,8 @@ def main() -> None:
         raise FileNotFoundError(f"Repo archive not found and working repo missing: {repo_archive}")
     env = os.environ.copy()
     env.setdefault("NEMOTRON_OFFLINE_WHEEL_DIRS", str(asset_root / "offline_wheels"))
+    env["NEMOTRON_PROGRESS_PATH"] = str(PROGRESS_PATH)
+    env["NEMOTRON_PROGRESS_EVENTS_PATH"] = str(PROGRESS_EVENTS_PATH)
 
     commands = [
         ["python", "training/kaggle_probe.py"],
@@ -69,17 +99,70 @@ def main() -> None:
         commands.append(["python", "submission/package_lora.py", "--adapter-dir", "outputs/stage1_sft"])
 
     started_at = datetime.now(timezone.utc).isoformat()
+    reporter = ProgressReporter("kernel_entry")
+    reporter.update(
+        status="running",
+        message="kernel_entry_started",
+        phase_percent=0.0,
+        overall_percent=0.0,
+        append_event=True,
+        extra={
+            "started_at_utc": started_at,
+            "commands": [command_name(command) for command in commands],
+            "working_repo": str(working_repo),
+        },
+    )
     with LOG_PATH.open("w", encoding="utf-8") as log_handle:
         log_handle.write(f"Kernel entry started at {started_at}\n")
-        for command in commands:
-            completed = subprocess.run(command, cwd=str(working_repo), env=env, text=True, capture_output=True)
-            log_handle.write(f"\n$ {' '.join(command)}\n")
-            if completed.stdout:
-                log_handle.write(completed.stdout)
-            if completed.stderr:
-                log_handle.write(completed.stderr)
-            log_handle.flush()
-            completed.check_returncode()
+        log_handle.flush()
+        try:
+            for index, command in enumerate(commands, start=1):
+                command_env = env.copy()
+                command_env["NEMOTRON_PROGRESS_COMMAND_INDEX"] = str(index)
+                command_env["NEMOTRON_PROGRESS_COMMAND_COUNT"] = str(len(commands))
+                command_env["NEMOTRON_PROGRESS_COMMAND_NAME"] = command_name(command)
+                reporter.update(
+                    status="running",
+                    message="command_started",
+                    phase=Path(command[1]).stem if len(command) > 1 else command[0],
+                    phase_percent=0.0,
+                    append_event=True,
+                    extra={
+                        "active_command": command,
+                        "active_command_index": index,
+                        "commands_total": len(commands),
+                    },
+                )
+                log_handle.write(f"\n$ {' '.join(command)}\n")
+                log_handle.flush()
+                run_and_tee(command, working_repo, command_env, log_handle)
+                reporter.update(
+                    status="running",
+                    message="command_finished",
+                    phase=Path(command[1]).stem if len(command) > 1 else command[0],
+                    phase_percent=100.0,
+                    append_event=True,
+                    extra={
+                        "active_command": command,
+                        "active_command_index": index,
+                        "commands_total": len(commands),
+                        "commands_completed": index,
+                    },
+                )
+        except Exception as error:
+            reporter.update(
+                status="failed",
+                message="command_failed",
+                phase=Path(command[1]).stem if len(command) > 1 else command[0],
+                append_event=True,
+                extra={
+                    "active_command": command,
+                    "active_command_index": index,
+                    "commands_total": len(commands),
+                    "error": str(error),
+                },
+            )
+            raise
 
     status = {
         "started_at_utc": started_at,
@@ -91,6 +174,15 @@ def main() -> None:
         "commands": commands,
     }
     STATUS_PATH.write_text(json.dumps(status, indent=2), encoding="utf-8")
+    reporter.update(
+        status="completed",
+        message="kernel_entry_finished",
+        phase="complete",
+        phase_percent=100.0,
+        overall_percent=100.0,
+        append_event=True,
+        extra={"finished_at_utc": status["finished_at_utc"]},
+    )
     print(json.dumps(status, indent=2))
 
 
