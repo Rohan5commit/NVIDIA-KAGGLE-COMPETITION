@@ -1,212 +1,83 @@
-# nemotron-reasoning-lora
+# NVIDIA KAGGLE COMPETITION
 
-LoRA training and evaluation pipeline for the Kaggle NVIDIA Nemotron Model Reasoning Challenge, centered on `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16` with rank-32 LoRA, two-stage post-training, adapter-only packaging, and a Kaggle-ready writeup notebook.
+This is the canonical continuation repo for the NVIDIA Nemotron Model Reasoning Challenge work.
 
-## Status
+## Canonical repo status
 
-As of April 8, 2026:
+- Canonical repo for all future work: Rohan5commit/NVIDIA-KAGGLE-COMPETITION
+- Legacy repo that already existed: Rohan5commit/nemotron-reasoning-lora
+- There are currently two private competition-related repos on the account.
+- Until the active Kaggle v7 run finishes, treat nemotron-reasoning-lora as legacy and read-only history.
+- All future work should go here.
 
-- GitHub repository scaffold: implemented and pushed to `https://github.com/Rohan5commit/nemotron-reasoning-lora`.
-- Kaggle competition access: confirmed for `nvidia-nemotron-model-reasoning-challenge`.
-- Kaggle RTX runtime access: confirmed through Kaggle Jupyter Server on April 8, 2026 with `NVIDIA RTX PRO 6000 Blackwell Server Edition` and 96 GB VRAM.
-- Data, SFT, GRPO, evaluation, and packaging code: implemented.
-- Smoke-run data download: completed across all six logical sources with 1,474 normalized records.
-- Smoke-run curation: completed with 182 selected records, 165 train rows, 17 validation rows, and 165 hard rows.
-- Larger local curation pass: completed on 14,817 normalized rows with 4,389 selected records, 3,666 SFT train rows, 723 validation rows, 3,510 GRPO rows, and 2,000 synthetic seed candidates.
-- Local GPU execution: not available in this environment.
-- Kaggle remote bootstrap execution: attempted from the repo on the live RTX session, but blocked by DNS resolution failures to external hosts from inside the Kaggle runtime.
-- Kaggle runtime asset bundle: staged locally as `artifacts/kaggle_runtime_assets/` with a repo tarball plus offline wheels for `bitsandbytes`, `trl`, `flash_attn`, `causal_conv1d`, and `mamba_ssm`.
-- Kaggle trainer kernel source: added at `kaggle/runtime_kernel/` for a push-based competition run that mounts the asset dataset, competition data, and the Nemotron model.
-- Final validation accuracy after SFT: not run in this environment.
-- Final validation accuracy after GRPO: not run in this environment.
-- `submission.zip`: not produced in this environment.
-- Public notebook link: `https://www.kaggle.com/code/rohansan1/nemotron-reasoning-lora-solution-writeup` (status observed on April 8, 2026: `COMPLETE`).
-- Midpoint submission status for April 9, 2026: not submitted from this environment.
+## Goal
 
-## Kaggle Runtime Notes
+Build a high-accuracy LoRA adapter and submission pipeline for the Kaggle NVIDIA Nemotron Model Reasoning Challenge using the Nemotron-3-Nano-30B model family.
 
-The repository now includes Kaggle-specific helper scripts to drive the competition notebook through Kaggle Jupyter Server:
+## Live Kaggle snapshot
 
-- `training/kaggle_probe.py`
-- `training/kaggle_start_bootstrap.py`
-- `training/kaggle_start_pipeline.py`
-- `training/kaggle_kernel_entry.py`
-- `training/build_kaggle_runtime_assets.py`
-- `kaggle/runtime_kernel/run_pipeline_kernel.py`
+Snapshot taken at 2026-04-09 14:48:04 +08
 
-Observed behavior on April 8, 2026:
+- Kernel: rohansan1/nemotron-reasoning-lora-trainer
+- Kernel version: 7
+- Status at snapshot time: RUNNING
+- GPU shape: NvidiaRtxPro6000
+- Competition: nvidia-nemotron-model-reasoning-challenge
+- Kaggle URL: https://www.kaggle.com/code/rohansan1/nemotron-reasoning-lora-trainer
 
-- the competition draft session exposed the correct RTX hardware
-- the session mounted `/kaggle/input/competitions/nvidia-nemotron-model-reasoning-challenge/{train.csv,test.csv}`
-- outbound package/model fetches from the runtime failed with `Temporary failure in name resolution`
-- because the runtime could not resolve PyPI or Hugging Face hosts, the repo could not complete dependency installation, dataset download, or Nemotron weight retrieval from that Kaggle session
+## What is in this repo
 
-## Live Source Notes
+This repo now contains the migrated source, config, notebook, runtime launcher files, evaluation code, packaging code, and artifact summaries from the legacy repo.
 
-Two parts of the user-supplied spec did not match the live Hugging Face Hub on April 8, 2026, so the repo records both the requested IDs and the working replacements:
+Included paths now cover:
 
-- Requested model alias `nvidia/nemotron-3-nano-30b-a3b-bf16` did not resolve. The pipeline uses the live NVIDIA repo `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16`.
-- Requested datasets `lighteval/MATH` and `HuggingFaceH4/numina-math-cots` did not resolve. The downloader maps them to `HuggingFaceH4/MATH` and `HuggingFaceH4/numina_60k_math_verify_correct_2_4gens_with_rm_scores`.
+- common.py
+- data/*.py
+- training/*.py
+- eval/local_eval.py
+- submission/package_lora.py
+- notebooks/solution_writeup.ipynb
+- training/train_config.yaml
+- artifacts/*.json
 
-The live Nemotron chat template on Hugging Face uses `<think>...</think>` inside the assistant turn. This repo supports both:
+## What is not yet in this repo
 
-- `official`: current Hugging Face Nemotron template.
-- `legacy_sft` / `legacy_synthetic`: the requested `<extra_id_2>` and `<extra_id_1>` reasoning delimiters.
+The large processed dataset files from the legacy repo were intentionally not mirrored during the remote-only migration:
 
-## Repository Layout
+- data/processed/curated_full.jsonl
+- data/processed/synthetic_seed_candidates.jsonl
+- data/processed/train_grpo.jsonl
+- data/processed/train_sft.jsonl
+- data/processed/validation.jsonl
 
-- `data/download_datasets.py`: downloads and normalizes the requested Hugging Face datasets into JSONL.
-- `data/filter_and_curate.py`: deduplicates, filters, stratifies, and produces the 50k SFT target set plus the 20k GRPO hard subset.
-- `data/generate_synthetic.py`: generates and filters synthetic reasoning traces for the hardest 2k problems.
-- `training/stage1_sft.py`: rank-32 LoRA SFT with an Unsloth-first, TRL fallback implementation.
-- `training/stage2_grpo.py`: GRPO fine-tuning with the four requested reward components.
-- `training/kaggle_probe.py`: Kaggle RTX runtime probe for packages, storage, network, and local competition mounts.
-- `training/kaggle_start_bootstrap.py`: detached remote dependency bootstrap for a Kaggle Jupyter Server session.
-- `training/kaggle_start_pipeline.py`: detached remote launcher for the full data-to-submission pipeline on Kaggle.
-- `training/train_config.yaml`: central configuration for model aliases, data quotas, training hyperparameters, and paths.
-- `eval/local_eval.py`: deterministic validation, prompt ablation, and best-of-16 ceiling evaluation with vLLM.
-- `submission/package_lora.py`: adapter-only verification, vLLM sanity check, and submission zip creation.
-- `notebooks/solution_writeup.ipynb`: Kaggle-ready notebook that renders charts and tables from generated artifacts.
-- `common.py`: shared answer extraction, scoring, prompt rendering, and config helpers.
+Those can be regenerated from code or moved from Kaggle outputs and datasets after the active run finishes.
 
-## Data Sources
+## What has worked so far
 
-Requested sources:
+- The private Kaggle kernel was recreated and republished through multiple versions.
+- The machine shape was explicitly pinned and later verified as NvidiaRtxPro6000.
+- Runtime asset discovery was improved for the newer Kaggle input mount layout.
+- Repo archive fallback worked when GitHub access inside Kaggle failed.
+- The pipeline advanced far enough to reach stage-1 training instead of failing during early bootstrap.
+- Compatibility fixes were identified for Nemotron plus PEFT plus bitsandbytes runtime issues.
+- The current v7 run passed the earlier failure window and was still running at the snapshot time above.
 
-- `openai/gsm8k`
-- `lighteval/MATH`
-- `AI-MO/NuminaMath-CoT`
-- `nvidia/OpenMathReasoning`
-- `HuggingFaceH4/numina-math-cots`
-- `EleutherAI/hendrycks_math`
+## What has not worked so far
 
-Resolved sources used by the downloader:
+- v1 and v2 failed during earlier launcher and runtime setup.
+- One earlier run landed on the wrong accelerator class before the machine shape was pinned correctly.
+- v3 and v4 reached stage-1 but failed inside Nemotron MoE with an index_add dtype mismatch.
+- v5 and v6 progressed further but failed in the PEFT LoRA bitsandbytes path with fused_dropout not implemented for Byte.
+- Kaggle script kernels did not expose reliable live train-step counters through the normal status endpoint, so exact percent done was not available from the active run.
 
-| logical source | requested id | resolved id | configured raw cap |
-|---|---|---|---:|
-| gsm8k | `openai/gsm8k` | `openai/gsm8k` | 9,000 |
-| math | `lighteval/MATH` | `HuggingFaceH4/MATH` | 12,500 |
-| numina_cot | `AI-MO/NuminaMath-CoT` | `AI-MO/NuminaMath-CoT` | 125,000 |
-| open_math_reasoning | `nvidia/OpenMathReasoning` | `nvidia/OpenMathReasoning` | 150,000 |
-| numina_h4 | `HuggingFaceH4/numina-math-cots` | `HuggingFaceH4/numina_60k_math_verify_correct_2_4gens_with_rm_scores` | 60,000 |
-| hendrycks_math | `EleutherAI/hendrycks_math` | `EleutherAI/hendrycks_math` | 12,500 |
+## Next actions after the active run ends
 
-Actual downloaded and curated sizes are written to:
+1. Capture the final outputs of v7 from Kaggle.
+2. Commit or export useful artifacts into this repo or Kaggle from this repo, not to local disk.
+3. Repoint remaining launcher or repo references so the next run uses NVIDIA-KAGGLE-COMPETITION instead of the legacy repo.
+4. Add explicit run progress telemetry for the next Kaggle version.
+5. Decide whether to archive the old nemotron-reasoning-lora repo after v7 is no longer needed.
 
-- `artifacts/dataset_download_summary.json`
-- `artifacts/filtering_summary.json`
+## Storage rule
 
-Smoke-run artifact counts currently in the repo from `python data/download_datasets.py --cap-override 250 --streaming`:
-
-| logical source | normalized records |
-|---|---:|
-| gsm8k | 250 |
-| math | 250 |
-| numina_cot | 224 |
-| open_math_reasoning | 248 |
-| numina_h4 | 250 |
-| hendrycks_math | 252 |
-| total | 1,474 |
-
-Smoke-run curation output:
-
-| artifact | rows |
-|---|---:|
-| curated_full.jsonl | 182 |
-| train_sft.jsonl | 165 |
-| validation.jsonl | 17 |
-| train_grpo.jsonl | 165 |
-| synthetic_seed_candidates.jsonl | 165 |
-
-Larger local curation output currently staged into the Kaggle asset bundle:
-
-| artifact | rows |
-|---|---:|
-| curated_full.jsonl | 4,389 |
-| train_sft.jsonl | 3,666 |
-| validation.jsonl | 723 |
-| train_grpo.jsonl | 3,510 |
-| synthetic_seed_candidates.jsonl | 2,000 |
-
-## Training Plan
-
-Stage 1 SFT:
-
-- model: `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16`
-- LoRA rank: `32`
-- alpha: `64`
-- dropout: `0.05`
-- target modules: `q_proj k_proj v_proj o_proj gate_proj up_proj down_proj`
-- 4-bit loading: enabled
-- LoftQ initialization: enabled
-- max sequence length: `8192`
-- per-device batch size: `2`
-- gradient accumulation: `4`
-- learning rate: `2e-4`
-- scheduler: `cosine`
-- warmup ratio: `0.05`
-- epochs: `2`
-- bf16: enabled
-- optimizer: `paged_adamw_8bit`
-- attention backend: `flash_attention_2`
-
-Stage 2 GRPO:
-
-- num generations: `8`
-- max prompt length: `1024`
-- max completion length: `4096`
-- learning rate: `5e-6`
-- per-device batch size: `2`
-- gradient accumulation: `4`
-- epochs: `1`
-- beta: `0.01`
-- scheduler: `cosine_with_restarts`
-- rollout temperature: `0.7`
-- vLLM enabled with `gpu_memory_utilization=0.92`
-- requested offload settings encoded as `False` when supported by the installed TRL version
-
-## Evaluation And Packaging
-
-- local validation uses vLLM with `gpu_memory_utilization=0.92` and `max_model_len=8192`
-- deterministic validation logs baseline, SFT, and GRPO accuracy separately
-- prompt ablation compares the three requested system prompt variants
-- best-of-N uses `temperature=0.7` and `N=16`
-- packaging verifies the adapter config, rejects merged weights, runs a 3-problem vLLM sanity check, and creates `submission/submission.zip`
-
-## Quickstart
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
-python data/download_datasets.py --streaming
-python data/filter_and_curate.py
-python data/generate_synthetic.py
-python training/stage1_sft.py
-python eval/local_eval.py --stage1-dir outputs/stage1_sft
-python training/stage2_grpo.py
-python eval/local_eval.py --stage1-dir outputs/stage1_sft --stage2-dir outputs/stage2_grpo
-python submission/package_lora.py --adapter-dir outputs/stage2_grpo
-```
-
-## Expected Runtime On Target Hardware
-
-These are planning estimates for the intended RTX PRO 6000 Blackwell 96 GB environment, not measurements from the current machine:
-
-- data download and curation: `1-3h` depending on Hub throughput
-- synthetic generation for 2k hard problems x 5 traces: `4-8h` depending on inference endpoint throughput
-- stage 1 SFT: `8-14h`
-- stage 2 GRPO: `6-12h`
-- deterministic evaluation, prompt ablation, packaging: `1-2h`
-- total planned GPU time: `19-36h`
-
-## Notebook And Awards
-
-The notebook at `notebooks/solution_writeup.ipynb` is organized to support:
-
-- Best Data: curation score formula and before/after quality distribution charts
-- Best RL Method: per-reward GRPO curves and total reward trajectory
-- Best Fine-Tuning Method: LoftQ, alpha=`2x rank`, and the SFT→GRPO pipeline rationale
-
-The Open Contribution Award form URL from the user prompt is preserved in the notebook and should only be submitted after a public Kaggle notebook link exists.
+Do not create local task workspaces or keep project artifacts on the local machine for this effort. Future code, notes, and handoff files must live in this repo or on Kaggle.
