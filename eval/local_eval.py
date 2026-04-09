@@ -12,6 +12,7 @@ if str(ROOT) not in sys.path:
 
 from common import (
     PROMPT_VARIANTS,
+    apply_nemotron_blackwell_compat_fallback,
     answers_match,
     bootstrap_optional_python_paths,
     extract_boxed_answer,
@@ -97,8 +98,11 @@ def load_transformers_backend(config: dict[str, Any], adapter_dir: str | None = 
         trust_remote_code=config["model"]["trust_remote_code"],
         attn_implementation=resolve_attn_implementation(config["model"]["attn_implementation"]),
     )
+    if apply_nemotron_blackwell_compat_fallback(model):
+        print("[info] Applied Nemotron Blackwell compatibility fallback kernels (eval path).")
     if adapter_dir:
         model = PeftModel.from_pretrained(model, adapter_dir)
+        apply_nemotron_blackwell_compat_fallback(getattr(model, "base_model", model))
     model.eval()
     return model
 
