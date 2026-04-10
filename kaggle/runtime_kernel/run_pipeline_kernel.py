@@ -47,7 +47,7 @@ def materialize_repo() -> None:
 
 
 def maybe_sync_latest_repo() -> None:
-    repo_url = os.environ.get("NEMOTRON_GITHUB_REPO", "https://github.com/Rohan5commit/nemotron-reasoning-lora.git")
+    repo_url = os.environ.get("NEMOTRON_GITHUB_REPO", "https://github.com/Rohan5commit/NVIDIA-KAGGLE-COMPETITION.git")
     temp_clone = WORKING_REPO.parent / "nemotron-reasoning-lora-latest"
     if temp_clone.exists():
         shutil.rmtree(temp_clone)
