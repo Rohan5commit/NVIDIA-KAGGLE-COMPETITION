@@ -6,6 +6,7 @@ import subprocess
 import tarfile
 import time
 import traceback
+import urllib.request
 import zipfile
 from pathlib import Path
 import json
@@ -135,6 +136,52 @@ def materialize_repo() -> None:
     shutil.copytree(repo_source, WORKING_REPO)
 
 
+def github_archive_url(repo_url: str, ref: str = "main") -> str | None:
+    trimmed = repo_url.rstrip("/")
+    if trimmed.endswith(".git"):
+        trimmed = trimmed[:-4]
+    prefix = "https://github.com/"
+    if not trimmed.startswith(prefix):
+        return None
+    owner_repo = trimmed[len(prefix) :]
+    if owner_repo.count("/") != 1:
+        return None
+    owner, repo = owner_repo.split("/", 1)
+    return f"https://codeload.github.com/{owner}/{repo}/tar.gz/refs/heads/{ref}"
+
+
+def download_latest_repo_archive(repo_url: str, destination: Path) -> bool:
+    archive_url = github_archive_url(repo_url)
+    if archive_url is None:
+        return False
+    temp_archive = destination.parent / "nemotron-reasoning-lora-latest.tar.gz"
+    extracted_root = None
+    try:
+        urllib.request.urlretrieve(archive_url, temp_archive)
+        with tarfile.open(temp_archive, "r:gz") as archive:
+            root_members = [
+                member.name.split("/", 1)[0]
+                for member in archive.getmembers()
+                if member.name and not member.name.startswith("./")
+            ]
+            archive.extractall(destination.parent)
+        if not root_members:
+            return False
+        extracted_root = destination.parent / root_members[0]
+        if destination.exists():
+            shutil.rmtree(destination)
+        shutil.move(str(extracted_root), str(destination))
+        return True
+    except Exception as error:
+        print(f"[warn] Unable to download latest repo archive from {archive_url}: {error}")
+        return False
+    finally:
+        if temp_archive.exists():
+            temp_archive.unlink()
+        if extracted_root is not None and extracted_root.exists():
+            shutil.rmtree(extracted_root, ignore_errors=True)
+
+
 def maybe_sync_latest_repo() -> None:
     if os.environ.get("NEMOTRON_SKIP_GITHUB_SYNC", "").strip().lower() in {"1", "true", "yes"}:
         print("[info] Skipping live GitHub sync; using mounted runtime assets.")
@@ -152,6 +199,16 @@ def maybe_sync_latest_repo() -> None:
             timeout=300,
         )
         print(f"[info] Synced latest repo from {repo_url}: {completed.stdout.strip()}")
+    except subprocess.CalledProcessError as error:
+        stderr = (error.stderr or "").strip()
+        stdout = (error.stdout or "").strip()
+        details = stderr or stdout or str(error)
+        print(f"[warn] git clone failed for {repo_url}: {details}")
+        if temp_clone.exists():
+            shutil.rmtree(temp_clone)
+        if not download_latest_repo_archive(repo_url, temp_clone):
+            return
+        print(f"[info] Synced latest repo archive from {repo_url}")
     except Exception as error:
         print(f"[warn] Unable to sync latest repo from {repo_url}, using bundled archive: {error}")
         if temp_clone.exists():
