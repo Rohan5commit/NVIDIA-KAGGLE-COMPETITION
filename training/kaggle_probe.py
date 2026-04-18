@@ -47,6 +47,21 @@ URLS = [
     "https://pypi.org",
     "https://www.google.com",
 ]
+NETWORK_PROBE_ENV = "NEMOTRON_ENABLE_NETWORK_PROBE"
+NETWORK_TIMEOUT_SECONDS = 3
+HUB_CONNECT_TIMEOUT_SECONDS = 3
+HUB_READ_TIMEOUT_SECONDS = 5
+
+
+def emit_probe_step(step: str, **extra: Any) -> None:
+    payload = {"probe_step": step}
+    payload.update(extra)
+    print(json.dumps(payload), flush=True)
+
+
+def network_probe_enabled() -> bool:
+    raw = os.environ.get(NETWORK_PROBE_ENV, "").strip().lower()
+    return raw in {"1", "true", "yes"}
 
 
 def package_versions() -> dict[str, str | None]:
@@ -91,7 +106,10 @@ def disk_info() -> dict[str, Any]:
     return output
 
 
-def internet_checks() -> dict[str, Any]:
+def internet_checks(enabled: bool) -> dict[str, Any]:
+    if not enabled:
+        emit_probe_step("internet_checks_skipped", reason="disabled_by_default")
+        return {"skipped": True, "reason": "disabled_by_default"}
     try:
         import requests
     except Exception as error:
@@ -99,15 +117,20 @@ def internet_checks() -> dict[str, Any]:
 
     results: dict[str, Any] = {}
     for url in URLS:
+        emit_probe_step("internet_check_start", url=url)
         try:
-            response = requests.get(url, timeout=10)
+            response = requests.get(url, timeout=NETWORK_TIMEOUT_SECONDS)
             results[url] = {"ok": True, "status": response.status_code}
         except Exception as error:
             results[url] = {"ok": False, "error": f"{type(error).__name__}: {error}"}
+        emit_probe_step("internet_check_done", url=url, ok=results[url].get("ok"))
     return results
 
 
-def hub_checks() -> dict[str, Any]:
+def hub_checks(enabled: bool) -> dict[str, Any]:
+    if not enabled:
+        emit_probe_step("hub_checks_skipped", reason="disabled_by_default")
+        return {"skipped": True, "reason": "disabled_by_default"}
     try:
         import requests
     except Exception as error:
@@ -115,8 +138,12 @@ def hub_checks() -> dict[str, Any]:
 
     results: dict[str, Any] = {}
     for repo_id in MODEL_IDS:
+        emit_probe_step("hub_check_start", repo_id=repo_id)
         try:
-            response = requests.get(f"https://huggingface.co/api/models/{repo_id}", timeout=(5, 15))
+            response = requests.get(
+                f"https://huggingface.co/api/models/{repo_id}",
+                timeout=(HUB_CONNECT_TIMEOUT_SECONDS, HUB_READ_TIMEOUT_SECONDS),
+            )
             results[repo_id] = {
                 "ok": response.ok,
                 "status": response.status_code,
@@ -129,6 +156,7 @@ def hub_checks() -> dict[str, Any]:
                 results[repo_id]["error"] = response.text[:200]
         except Exception as error:
             results[repo_id] = {"ok": False, "error": f"{type(error).__name__}: {error}"}
+        emit_probe_step("hub_check_done", repo_id=repo_id, ok=results[repo_id].get("ok"))
     return results
 
 
@@ -140,10 +168,13 @@ def kaggle_inputs() -> list[str]:
 
 
 def main() -> None:
+    network_enabled = network_probe_enabled()
+    emit_probe_step("probe_started", network_probe_enabled=network_enabled)
     output = {
         "cwd": os.getcwd(),
         "python": sys.version,
         "hostname": socket.gethostname(),
+        "network_probe_enabled": network_enabled,
         "env_subset": {
             "KAGGLE_KERNEL_RUN_TYPE": os.environ.get("KAGGLE_KERNEL_RUN_TYPE"),
             "KAGGLE_URL_BASE": os.environ.get("KAGGLE_URL_BASE"),
@@ -152,14 +183,15 @@ def main() -> None:
         "gpu": gpu_info(),
         "packages": package_versions(),
         "disk": disk_info(),
-        "internet": internet_checks(),
-        "huggingface": hub_checks(),
+        "internet": internet_checks(network_enabled),
+        "huggingface": hub_checks(network_enabled),
         "kaggle_inputs": kaggle_inputs(),
         "repo_exists": Path("/kaggle/working/nemotron-reasoning-lora").exists(),
         "repo_archive_exists": Path("/kaggle/working/nemotron-reasoning-lora.tar.gz").exists(),
     }
     artifacts_dir = ensure_dir(ROOT / "artifacts" / "remote")
     save_json(artifacts_dir / "kaggle_probe.json", output)
+    emit_probe_step("probe_completed")
     print(json.dumps(output, indent=2))
 
 

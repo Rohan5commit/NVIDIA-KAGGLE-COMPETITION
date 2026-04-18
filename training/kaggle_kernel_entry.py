@@ -3,12 +3,14 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import select
 import shutil
 import sys
 import tarfile
 from datetime import datetime, timezone
 from pathlib import Path
 import subprocess
+import time
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -95,7 +97,16 @@ def command_name(command: list[str]) -> str:
     return " ".join(command)
 
 
-def run_and_tee(command: list[str], working_repo: Path, env: dict[str, str], log_handle) -> None:
+def run_and_tee(
+    command: list[str],
+    working_repo: Path,
+    env: dict[str, str],
+    log_handle,
+    *,
+    reporter: ProgressReporter | None = None,
+    active_phase: str | None = None,
+    heartbeat_interval_seconds: float = 15.0,
+) -> None:
     process = subprocess.Popen(
         command,
         cwd=str(working_repo),
@@ -106,9 +117,37 @@ def run_and_tee(command: list[str], working_repo: Path, env: dict[str, str], log
         bufsize=1,
     )
     assert process.stdout is not None
-    for line in process.stdout:
-        sys.stdout.write(line)
-        log_handle.write(line)
+    last_output_at = time.time()
+    while True:
+        ready, _, _ = select.select([process.stdout], [], [], heartbeat_interval_seconds)
+        if ready:
+            line = process.stdout.readline()
+            if line:
+                last_output_at = time.time()
+                sys.stdout.write(line)
+                sys.stdout.flush()
+                log_handle.write(line)
+                log_handle.flush()
+                continue
+        if process.poll() is not None:
+            for line in process.stdout:
+                sys.stdout.write(line)
+                sys.stdout.flush()
+                log_handle.write(line)
+            log_handle.flush()
+            break
+        if reporter is not None:
+            reporter.update(
+                status="running",
+                message="command_heartbeat",
+                phase=active_phase,
+                append_event=True,
+                extra={
+                    "active_command": command,
+                    "heartbeat_interval_seconds": heartbeat_interval_seconds,
+                    "seconds_since_last_output": round(time.time() - last_output_at, 2),
+                },
+            )
     process.wait()
     if process.returncode:
         raise subprocess.CalledProcessError(process.returncode, command)
@@ -185,7 +224,14 @@ def main() -> None:
                 )
                 log_handle.write(f"\n$ {' '.join(command)}\n")
                 log_handle.flush()
-                run_and_tee(command, working_repo, command_env, log_handle)
+                run_and_tee(
+                    command,
+                    working_repo,
+                    command_env,
+                    log_handle,
+                    reporter=reporter,
+                    active_phase=Path(command[1]).stem if len(command) > 1 else command[0],
+                )
                 reporter.update(
                     status="running",
                     message="command_finished",

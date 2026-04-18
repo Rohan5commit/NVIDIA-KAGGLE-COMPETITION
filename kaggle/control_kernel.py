@@ -24,6 +24,11 @@ from kagglesdk.kernels.types.kernels_api_service import (
 RUNNING_STATES = {"RUNNING", "QUEUED", "PENDING", "STARTING", "INITIALIZING"}
 DEFAULT_KERNEL_REF = "rohansan1/nemotron-reasoning-lora-trainer"
 DEFAULT_MACHINE_SHAPE = "NvidiaRtxPro6000"
+PROGRESS_FILE_SUFFIXES = ("run_progress.json", "nemotron-run-progress.json")
+PROGRESS_EVENTS_FILE_SUFFIXES = ("run_progress_events.jsonl", "nemotron-run-progress-events.jsonl")
+LAUNCHER_HEARTBEAT_SUFFIXES = ("launcher_heartbeat.json",)
+LAUNCHER_HEARTBEAT_EVENTS_SUFFIXES = ("launcher_heartbeat_events.jsonl",)
+LAUNCHER_ERROR_SUFFIXES = ("launcher_error.txt",)
 
 
 @dataclass(frozen=True)
@@ -114,6 +119,10 @@ def safe_request_text(url: str, timeout: int = 30) -> str:
         return response.text
     except Exception:
         return ""
+
+
+def find_output_entry(files: list[dict[str, str]], suffixes: tuple[str, ...]) -> dict[str, str] | None:
+    return next((entry for entry in files if any(entry["file_name"].endswith(suffix) for suffix in suffixes)), None)
 
 
 def estimate_eta_from_events(events_text: str, latest_percent: float | None) -> dict[str, Any]:
@@ -277,11 +286,17 @@ def collect_progress_snapshot(api: KaggleApi, kernel_ref: KernelRef) -> dict[str
             continue
         files.append({"file_name": file_name, "url": url})
 
-    progress_entry = next((f for f in files if f["file_name"].endswith("run_progress.json")), None)
-    events_entry = next((f for f in files if f["file_name"].endswith("run_progress_events.jsonl")), None)
+    progress_entry = find_output_entry(files, PROGRESS_FILE_SUFFIXES)
+    events_entry = find_output_entry(files, PROGRESS_EVENTS_FILE_SUFFIXES)
+    launcher_entry = find_output_entry(files, LAUNCHER_HEARTBEAT_SUFFIXES)
+    launcher_events_entry = find_output_entry(files, LAUNCHER_HEARTBEAT_EVENTS_SUFFIXES)
+    launcher_error_entry = find_output_entry(files, LAUNCHER_ERROR_SUFFIXES)
 
     progress_payload = safe_request_json(progress_entry["url"]) if progress_entry else None
     events_text = safe_request_text(events_entry["url"]) if events_entry else ""
+    launcher_payload = safe_request_json(launcher_entry["url"]) if launcher_entry else None
+    launcher_events_text = safe_request_text(launcher_events_entry["url"]) if launcher_events_entry else ""
+    launcher_error_text = safe_request_text(launcher_error_entry["url"]).strip() if launcher_error_entry else ""
     log_size = len(getattr(response, "log", "") or "")
 
     overall_percent = None
@@ -305,6 +320,12 @@ def collect_progress_snapshot(api: KaggleApi, kernel_ref: KernelRef) -> dict[str
         eta["eta_seconds"] = log_eta["eta_seconds"]
         eta["eta_utc"] = log_eta["eta_utc"]
         eta["progress_rate_percent_per_hour"] = log_eta["progress_rate_percent_per_hour"]
+    launcher_stage = launcher_payload.get("stage") if isinstance(launcher_payload, dict) else None
+    launcher_status_hint = None
+    if launcher_stage:
+        launcher_status_hint = f"launcher:{launcher_stage}"
+    if launcher_error_text:
+        launcher_status_hint = "launcher:error"
     return {
         "updated_at_utc": now_utc(),
         "files_count": len(files),
@@ -312,6 +333,13 @@ def collect_progress_snapshot(api: KaggleApi, kernel_ref: KernelRef) -> dict[str
         "progress_file": progress_entry["file_name"] if progress_entry else None,
         "events_file": events_entry["file_name"] if events_entry else None,
         "progress": progress_payload,
+        "launcher_heartbeat_file": launcher_entry["file_name"] if launcher_entry else None,
+        "launcher_events_file": launcher_events_entry["file_name"] if launcher_events_entry else None,
+        "launcher_error_file": launcher_error_entry["file_name"] if launcher_error_entry else None,
+        "launcher_heartbeat": launcher_payload,
+        "launcher_events_size_bytes": len(launcher_events_text.encode("utf-8")) if launcher_events_text else 0,
+        "launcher_error_excerpt": launcher_error_text[-1000:] if launcher_error_text else "",
+        "launcher_status_hint": launcher_status_hint,
         "log_percent_estimate": log_percent,
         "overall_percent_estimate": overall_percent_estimate,
         "eta": eta,
