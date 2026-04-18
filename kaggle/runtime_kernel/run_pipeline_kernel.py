@@ -341,6 +341,11 @@ def main() -> None:
         if resolved_wheel_dir is not None:
             env["NEMOTRON_OFFLINE_WHEEL_DIRS"] = str(resolved_wheel_dir)
         env["PYTHONUNBUFFERED"] = "1"
+        env.setdefault("NEMOTRON_ENABLE_NETWORK_PROBE", "0")
+        emit_launcher_heartbeat(
+            "kernel_env_prepared",
+            network_probe_enabled=env.get("NEMOTRON_ENABLE_NETWORK_PROBE"),
+        )
         pipeline_mode = env.get("NEMOTRON_KERNEL_MODE", "stage1_fast").strip().lower()
         command = ["python", "training/kaggle_kernel_entry.py", "--skip-synthetic"]
         if pipeline_mode != "full":
