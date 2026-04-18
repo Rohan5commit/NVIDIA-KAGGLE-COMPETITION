@@ -17,6 +17,7 @@ REPO_ASSET_CANDIDATES = [
     Path("/kaggle/input/nemotron-runtime-repo"),
     WHEEL_ASSET_ROOT,
 ]
+PREFERRED_DATASET_NAMES = ("nemotron-runtime-repo", "nemotron-runtime-assets")
 REPO_ARCHIVE_NAME = "nemotron-reasoning-lora.tar.gz"
 WORKING_REPO = Path("/kaggle/working/nemotron-reasoning-lora")
 ASSET_SNAPSHOT_PATH = Path("/kaggle/working/asset_snapshot.json")
@@ -47,10 +48,23 @@ def discover_input_roots() -> list[Path]:
         return []
 
 
+def discover_named_dataset_paths() -> list[Path]:
+    dataset_root = Path("/kaggle/input/datasets")
+    if not dataset_root.exists():
+        return []
+    discovered: list[Path] = []
+    for owner_dir in sorted(path for path in dataset_root.iterdir() if path.is_dir()):
+        for dataset_name in PREFERRED_DATASET_NAMES:
+            candidate = owner_dir / dataset_name
+            if candidate.exists():
+                discovered.append(candidate)
+    return discovered
+
+
 def all_repo_asset_candidates() -> list[Path]:
     candidates: list[Path] = []
     seen: set[str] = set()
-    for path in [*REPO_ASSET_CANDIDATES, *discover_input_roots()]:
+    for path in [*REPO_ASSET_CANDIDATES, *discover_named_dataset_paths(), *discover_input_roots()]:
         key = str(path)
         if key in seen:
             continue
