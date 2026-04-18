@@ -75,6 +75,25 @@ def kaggle_api() -> KaggleApi:
     return api
 
 
+def kernel_details(api: KaggleApi, kernel_ref: KernelRef) -> dict[str, Any]:
+    request = ApiGetKernelRequest()
+    request.user_name = kernel_ref.username
+    request.kernel_slug = kernel_ref.slug
+    with api.build_kaggle_client() as client:
+        kernel = client.kernels.kernels_api_client.get_kernel(request)
+
+    metadata = getattr(kernel, "metadata", None)
+    current_session_id = getattr(kernel, "current_session", None) or getattr(kernel, "currentSession", None) or None
+    return {
+        "current_session_id": int(current_session_id) if current_session_id else None,
+        "current_version_number": getattr(metadata, "current_version_number", None)
+        or getattr(metadata, "currentVersionNumber", None),
+        "last_run_time": getattr(metadata, "last_run_time", None) or getattr(metadata, "lastRunTime", None),
+        "machine_shape": getattr(metadata, "machine_shape", None) or getattr(metadata, "machineShape", None),
+        "docker_image": getattr(metadata, "docker_image", None) or getattr(metadata, "dockerImage", None),
+    }
+
+
 def safe_request_json(url: str, timeout: int = 30) -> dict[str, Any] | None:
     try:
         response = requests.get(url, timeout=timeout)
@@ -304,9 +323,20 @@ def kernel_status(api: KaggleApi, kernel_ref: KernelRef) -> dict[str, Any]:
     status_request.kernel_slug = kernel_ref.slug
     with api.build_kaggle_client() as client:
         status_response = client.kernels.kernels_api_client.get_kernel_session_status(status_request)
+    details = kernel_details(api, kernel_ref)
+    raw_status = enum_name(getattr(status_response, "status", None))
+    effective_status = raw_status
+    notes: list[str] = []
+    if raw_status == "RUNNING" and not details["current_session_id"]:
+        effective_status = "STALE_RUNNING_NO_SESSION"
+        notes.append("Kaggle session status reports RUNNING but get_kernel has no current_session_id.")
     return {
+        "raw_status": raw_status,
         "status": enum_name(getattr(status_response, "status", None)),
         "failure_message": getattr(status_response, "failure_message", "") or "",
+        "effective_status": effective_status,
+        "notes": notes,
+        "kernel_details": details,
     }
 
 
@@ -369,7 +399,7 @@ def command_ensure_running(
         "error": None,
     }
 
-    if is_running_state(before["status"]):
+    if is_running_state(before.get("effective_status") or before["status"]):
         payload["action"] = "already_running"
         payload["status_after"] = before
         payload["snapshot"] = collect_progress_snapshot(api, kernel_ref)
@@ -377,9 +407,13 @@ def command_ensure_running(
         print(json.dumps(payload, indent=2))
         return 0
 
+    if before.get("effective_status") == "STALE_RUNNING_NO_SESSION":
+        payload["action"] = "stale_status_recovered"
+
     try:
         launch_result = create_kernel_session(api, kernel_ref, machine_shape)
-        payload["action"] = "started"
+        if payload["action"] is None:
+            payload["action"] = "started"
         payload["launch_result"] = launch_result
     except HTTPError as error:
         response_text = ""
