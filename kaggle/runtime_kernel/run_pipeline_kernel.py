@@ -4,6 +4,7 @@ import os
 import shutil
 import subprocess
 import tarfile
+import time
 import traceback
 import zipfile
 from pathlib import Path
@@ -19,18 +20,106 @@ REPO_ARCHIVE_NAME = "nemotron-reasoning-lora.tar.gz"
 WORKING_REPO = Path("/kaggle/working/nemotron-reasoning-lora")
 ASSET_SNAPSHOT_PATH = Path("/kaggle/working/asset_snapshot.json")
 LAUNCHER_ERROR_PATH = Path("/kaggle/working/launcher_error.txt")
+LAUNCHER_HEARTBEAT_PATH = Path("/kaggle/working/launcher_heartbeat.json")
+LAUNCHER_HEARTBEAT_EVENTS_PATH = Path("/kaggle/working/launcher_heartbeat_events.jsonl")
+
+
+def emit_launcher_heartbeat(stage: str, **extra: object) -> None:
+    payload = {
+        "stage": stage,
+        "ts": time.time(),
+        "cwd": os.getcwd(),
+    }
+    payload.update(extra)
+    LAUNCHER_HEARTBEAT_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    with LAUNCHER_HEARTBEAT_EVENTS_PATH.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload) + "\n")
+
+
+def discover_input_roots() -> list[Path]:
+    input_root = Path("/kaggle/input")
+    if not input_root.exists():
+        return []
+    try:
+        return sorted(path for path in input_root.iterdir() if path.is_dir())
+    except Exception:
+        return []
+
+
+def all_repo_asset_candidates() -> list[Path]:
+    candidates: list[Path] = []
+    seen: set[str] = set()
+    for path in [*REPO_ASSET_CANDIDATES, *discover_input_roots()]:
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        candidates.append(path)
+    return candidates
+
+
+def wait_for_input_mounts(timeout_seconds: int = 180, poll_seconds: int = 6) -> None:
+    deadline = time.time() + timeout_seconds
+    logged_roots = False
+    while time.time() < deadline:
+        roots = discover_input_roots()
+        if roots and not logged_roots:
+            print(f"[info] /kaggle/input roots detected: {', '.join(path.name for path in roots[:20])}")
+            logged_roots = True
+        candidates = all_repo_asset_candidates()
+        for candidate in candidates:
+            if (candidate / REPO_ARCHIVE_NAME).exists():
+                return
+            if (candidate / "training" / "train_config.yaml").exists():
+                return
+        for root in roots:
+            if next(iter(root.rglob("training/train_config.yaml")), None) is not None:
+                return
+            if next(iter(root.rglob(REPO_ARCHIVE_NAME)), None) is not None:
+                return
+        print("[warn] Repo assets not mounted yet; waiting...")
+        time.sleep(poll_seconds)
+
+
+def locate_runtime_asset_root() -> Path | None:
+    candidates = all_repo_asset_candidates()
+    for root in candidates:
+        if (
+            (root / "offline_wheels").exists()
+            or (root / "offline_wheels.zip").exists()
+            or (root / "offline_wheels.tar").exists()
+            or (root / REPO_ARCHIVE_NAME).exists()
+        ):
+            return root
+    for root in candidates:
+        for match in root.rglob("offline_wheels"):
+            if match.is_dir():
+                return match.parent
+        for match in root.rglob("offline_wheels.zip"):
+            if match.is_file():
+                return match.parent
+        for match in root.rglob("offline_wheels.tar"):
+            if match.is_file():
+                return match.parent
+        for match in root.rglob(REPO_ARCHIVE_NAME):
+            if match.is_file():
+                return match.parent
+    return None
 
 
 def locate_repo_source() -> tuple[str, Path]:
-    for asset_root in REPO_ASSET_CANDIDATES:
+    for asset_root in all_repo_asset_candidates():
         archive_path = asset_root / REPO_ARCHIVE_NAME
         if archive_path.exists():
             return "archive", archive_path
-    for asset_root in REPO_ASSET_CANDIDATES:
+    for asset_root in all_repo_asset_candidates():
+        marker_path = asset_root / "training" / "train_config.yaml"
+        if marker_path.exists():
+            return "directory", asset_root
         markers = sorted(asset_root.rglob("training/train_config.yaml"))
         if markers:
             return "directory", markers[0].parent.parent
-    roots = ", ".join(str(path) for path in REPO_ASSET_CANDIDATES)
+    roots = ", ".join(str(path) for path in all_repo_asset_candidates())
     raise FileNotFoundError(f"Missing repo source under any of: {roots}")
 
 
@@ -47,6 +136,9 @@ def materialize_repo() -> None:
 
 
 def maybe_sync_latest_repo() -> None:
+    if os.environ.get("NEMOTRON_SYNC_LATEST_REPO", "").strip().lower() not in {"1", "true", "yes"}:
+        print("[info] Skipping live GitHub sync; using mounted runtime assets.")
+        return
     repo_url = os.environ.get("NEMOTRON_GITHUB_REPO", "https://github.com/Rohan5commit/NVIDIA-KAGGLE-COMPETITION.git")
     temp_clone = WORKING_REPO.parent / "nemotron-reasoning-lora-latest"
     if temp_clone.exists():
@@ -75,13 +167,15 @@ def maybe_sync_latest_repo() -> None:
     shutil.move(str(temp_clone), str(WORKING_REPO))
 
 
-def materialize_wheels() -> Path | None:
+def materialize_wheels(asset_root: Path | None) -> Path | None:
+    if asset_root is None:
+        return None
     working_wheel_dir = Path("/kaggle/working/offline_wheels")
     if working_wheel_dir.exists():
         shutil.rmtree(working_wheel_dir)
-    wheel_dir = WHEEL_ASSET_ROOT / "offline_wheels"
-    wheel_zip = WHEEL_ASSET_ROOT / "offline_wheels.zip"
-    wheel_tar = WHEEL_ASSET_ROOT / "offline_wheels.tar"
+    wheel_dir = asset_root / "offline_wheels"
+    wheel_zip = asset_root / "offline_wheels.zip"
+    wheel_tar = asset_root / "offline_wheels.tar"
     if wheel_dir.exists():
         return wheel_dir
     elif wheel_zip.exists():
@@ -91,7 +185,7 @@ def materialize_wheels() -> Path | None:
         with tarfile.open(wheel_tar) as archive:
             archive.extractall(working_wheel_dir)
     else:
-        recursive_wheels = sorted(WHEEL_ASSET_ROOT.rglob("*.whl"))
+        recursive_wheels = sorted(asset_root.rglob("*.whl"))
         if not recursive_wheels:
             return None
         working_wheel_dir.mkdir(parents=True, exist_ok=True)
@@ -106,7 +200,7 @@ def materialize_wheels() -> Path | None:
 
 def dump_asset_snapshot() -> None:
     snapshots: list[dict[str, object]] = []
-    for asset_root in REPO_ASSET_CANDIDATES:
+    for asset_root in all_repo_asset_candidates():
         files: list[dict[str, object]] = []
         if asset_root.exists():
             for path in sorted(asset_root.rglob("*"))[:400]:
@@ -126,6 +220,9 @@ def dump_asset_snapshot() -> None:
         )
     payload = {"asset_roots": snapshots}
     ASSET_SNAPSHOT_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+emit_launcher_heartbeat("module_loaded")
 
 
 def apply_runtime_config_overrides() -> None:
@@ -151,16 +248,27 @@ def apply_runtime_config_overrides() -> None:
 
 
 def main() -> None:
+    emit_launcher_heartbeat("main_started")
     dump_asset_snapshot()
+    emit_launcher_heartbeat("asset_snapshot_written", path=str(ASSET_SNAPSHOT_PATH))
     try:
+        wait_for_input_mounts()
+        emit_launcher_heartbeat("input_mounts_ready")
         materialize_repo()
+        emit_launcher_heartbeat("repo_materialized", working_repo_exists=WORKING_REPO.exists())
         maybe_sync_latest_repo()
-        resolved_wheel_dir = materialize_wheels()
+        emit_launcher_heartbeat("repo_sync_attempted", working_repo_exists=WORKING_REPO.exists())
+        runtime_asset_root = locate_runtime_asset_root()
+        emit_launcher_heartbeat("runtime_asset_root_resolved", asset_root=str(runtime_asset_root) if runtime_asset_root else None)
+        resolved_wheel_dir = materialize_wheels(runtime_asset_root)
+        emit_launcher_heartbeat("runtime_assets_resolved", wheel_dir=str(resolved_wheel_dir) if resolved_wheel_dir is not None else None)
         apply_runtime_config_overrides()
+        emit_launcher_heartbeat("runtime_overrides_applied")
 
         env = os.environ.copy()
         if resolved_wheel_dir is not None:
             env["NEMOTRON_OFFLINE_WHEEL_DIRS"] = str(resolved_wheel_dir)
+        env["PYTHONUNBUFFERED"] = "1"
         pipeline_mode = env.get("NEMOTRON_KERNEL_MODE", "stage1_fast").strip().lower()
         command = ["python", "training/kaggle_kernel_entry.py", "--skip-synthetic"]
         if pipeline_mode != "full":
@@ -168,13 +276,16 @@ def main() -> None:
             print(f"[info] Kernel mode={pipeline_mode}: running stage1/eval/package only.")
         else:
             print(f"[info] Kernel mode={pipeline_mode}: running full stage1+stage2 pipeline.")
+        emit_launcher_heartbeat("pipeline_subprocess_starting", command=command, pipeline_mode=pipeline_mode)
         subprocess.run(
             command,
             cwd=str(WORKING_REPO),
             env=env,
             check=True,
         )
+        emit_launcher_heartbeat("pipeline_subprocess_completed")
     except Exception:
+        emit_launcher_heartbeat("launcher_failed", error=traceback.format_exc())
         LAUNCHER_ERROR_PATH.write_text(traceback.format_exc(), encoding="utf-8")
         raise
 
