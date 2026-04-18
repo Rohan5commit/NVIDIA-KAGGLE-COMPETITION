@@ -109,16 +109,16 @@ def locate_runtime_asset_root() -> Path | None:
 
 def locate_repo_source() -> tuple[str, Path]:
     for asset_root in all_repo_asset_candidates():
-        archive_path = asset_root / REPO_ARCHIVE_NAME
-        if archive_path.exists():
-            return "archive", archive_path
-    for asset_root in all_repo_asset_candidates():
         marker_path = asset_root / "training" / "train_config.yaml"
         if marker_path.exists():
             return "directory", asset_root
         markers = sorted(asset_root.rglob("training/train_config.yaml"))
         if markers:
             return "directory", markers[0].parent.parent
+    for asset_root in all_repo_asset_candidates():
+        archive_path = asset_root / REPO_ARCHIVE_NAME
+        if archive_path.exists():
+            return "archive", archive_path
     roots = ", ".join(str(path) for path in all_repo_asset_candidates())
     raise FileNotFoundError(f"Missing repo source under any of: {roots}")
 
