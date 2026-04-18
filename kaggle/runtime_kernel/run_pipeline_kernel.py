@@ -266,6 +266,8 @@ def main() -> None:
         emit_launcher_heartbeat("runtime_overrides_applied")
 
         env = os.environ.copy()
+        if runtime_asset_root is not None:
+            env["NEMOTRON_ASSET_ROOT"] = str(runtime_asset_root)
         if resolved_wheel_dir is not None:
             env["NEMOTRON_OFFLINE_WHEEL_DIRS"] = str(resolved_wheel_dir)
         env["PYTHONUNBUFFERED"] = "1"
