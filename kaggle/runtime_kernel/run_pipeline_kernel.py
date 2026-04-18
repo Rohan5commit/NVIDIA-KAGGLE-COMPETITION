@@ -136,7 +136,7 @@ def materialize_repo() -> None:
 
 
 def maybe_sync_latest_repo() -> None:
-    if os.environ.get("NEMOTRON_SYNC_LATEST_REPO", "").strip().lower() not in {"1", "true", "yes"}:
+    if os.environ.get("NEMOTRON_SKIP_GITHUB_SYNC", "").strip().lower() in {"1", "true", "yes"}:
         print("[info] Skipping live GitHub sync; using mounted runtime assets.")
         return
     repo_url = os.environ.get("NEMOTRON_GITHUB_REPO", "https://github.com/Rohan5commit/NVIDIA-KAGGLE-COMPETITION.git")
