@@ -85,12 +85,10 @@ def wait_for_input_mounts(timeout_seconds: int = 180, poll_seconds: int = 6) -> 
 def locate_runtime_asset_root() -> Path | None:
     candidates = all_repo_asset_candidates()
     for root in candidates:
-        if (
-            (root / "offline_wheels").exists()
-            or (root / "offline_wheels.zip").exists()
-            or (root / "offline_wheels.tar").exists()
-            or (root / REPO_ARCHIVE_NAME).exists()
-        ):
+        if (root / "offline_wheels").exists() or (root / "offline_wheels.zip").exists() or (root / "offline_wheels.tar").exists():
+            return root
+    for root in candidates:
+        if (root / REPO_ARCHIVE_NAME).exists():
             return root
     for root in candidates:
         for match in root.rglob("offline_wheels"):
@@ -102,6 +100,7 @@ def locate_runtime_asset_root() -> Path | None:
         for match in root.rglob("offline_wheels.tar"):
             if match.is_file():
                 return match.parent
+    for root in candidates:
         for match in root.rglob(REPO_ARCHIVE_NAME):
             if match.is_file():
                 return match.parent
@@ -183,7 +182,7 @@ def download_latest_repo_archive(repo_url: str, destination: Path) -> bool:
 
 
 def maybe_sync_latest_repo() -> None:
-    if os.environ.get("NEMOTRON_SKIP_GITHUB_SYNC", "").strip().lower() in {"1", "true", "yes"}:
+    if os.environ.get("NEMOTRON_SYNC_LATEST_REPO", "").strip().lower() not in {"1", "true", "yes"}:
         print("[info] Skipping live GitHub sync; using mounted runtime assets.")
         return
     repo_url = os.environ.get("NEMOTRON_GITHUB_REPO", "https://github.com/Rohan5commit/NVIDIA-KAGGLE-COMPETITION.git")

@@ -54,6 +54,8 @@ def build_repo_archive(repo_root: Path, destination: Path) -> None:
     }
     excluded_prefixes = (
         "artifacts/kaggle_runtime_assets/",
+        "artifacts/kaggle_runtime_assets_stage/",
+        "artifacts/kaggle_runtime_repo_stage/",
         "artifacts/remote/",
         "data/raw/",
         "outputs/",
