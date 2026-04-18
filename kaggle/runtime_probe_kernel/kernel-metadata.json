@@ -1,0 +1,19 @@
+{
+  "id": "rohansan1/nemotron-runtime-cpu-probe",
+  "title": "Nemotron Runtime CPU Probe",
+  "code_file": "repo_probe_kernel.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": "true",
+  "enable_gpu": "false",
+  "enable_tpu": "false",
+  "enable_internet": "false",
+  "dataset_sources": [
+    "rohansan1/nemotron-runtime-assets",
+    "rohansan1/nemotron-runtime-repo"
+  ],
+  "competition_sources": [
+    "nvidia-nemotron-model-reasoning-challenge"
+  ],
+  "kernel_sources": []
+}
