@@ -8,10 +8,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 import re
 from typing import Any
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 
-import requests
 from kaggle.api.kaggle_api_extended import KaggleApi
-from requests import HTTPError
 
 from kagglesdk.kernels.services.kernels_api_service import ApiGetKernelRequest
 from kagglesdk.kernels.types.kernels_api_service import (
@@ -102,9 +102,8 @@ def kernel_details(api: KaggleApi, kernel_ref: KernelRef) -> dict[str, Any]:
 
 def safe_request_json(url: str, timeout: int = 30) -> dict[str, Any] | None:
     try:
-        response = requests.get(url, timeout=timeout)
-        response.raise_for_status()
-        payload = response.json()
+        with urllib_request.urlopen(url, timeout=timeout) as response:
+            payload = json.loads(response.read().decode("utf-8"))
         if isinstance(payload, dict):
             return payload
         return None
@@ -114,9 +113,8 @@ def safe_request_json(url: str, timeout: int = 30) -> dict[str, Any] | None:
 
 def safe_request_text(url: str, timeout: int = 30) -> str:
     try:
-        response = requests.get(url, timeout=timeout)
-        response.raise_for_status()
-        return response.text
+        with urllib_request.urlopen(url, timeout=timeout) as response:
+            return response.read().decode("utf-8")
     except Exception:
         return ""
 
@@ -435,12 +433,19 @@ def command_ensure_running(
         launch_result = create_kernel_session(api, kernel_ref, machine_shape)
         payload["action"] = "started"
         payload["launch_result"] = launch_result
-    except HTTPError as error:
+    except Exception as error:
         response_text = ""
         status_code = None
-        if error.response is not None:
-            status_code = error.response.status_code
-            response_text = error.response.text or ""
+        response = getattr(error, "response", None)
+        if response is not None:
+            status_code = getattr(response, "status_code", None)
+            response_text = getattr(response, "text", "") or ""
+        elif isinstance(error, urllib_error.HTTPError):
+            status_code = getattr(error, "code", None)
+            try:
+                response_text = error.read().decode("utf-8")
+            except Exception:
+                response_text = ""
         payload["error"] = {
             "type": type(error).__name__,
             "status_code": status_code,
