@@ -213,6 +213,7 @@ evaluation:
   best_of_n: 16
   max_model_len: 8192
   gpu_memory_utilization: 0.92
+  transformers_max_new_tokens_cap: 1024
 
 submission:
   zip_name: submission.zip

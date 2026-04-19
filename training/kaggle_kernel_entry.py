@@ -27,6 +27,7 @@ LOG_PATH = Path("/kaggle/working/nemotron-kernel-run.log")
 STATUS_PATH = Path("/kaggle/working/nemotron-kernel-status.json")
 PROGRESS_PATH = Path("/kaggle/working/nemotron-run-progress.json")
 PROGRESS_EVENTS_PATH = Path("/kaggle/working/nemotron-run-progress-events.jsonl")
+DEFAULT_KERNEL_EVAL_MAX_SAMPLES = 64
 
 
 def parse_args() -> argparse.Namespace:
@@ -97,6 +98,17 @@ def command_name(command: list[str]) -> str:
     return " ".join(command)
 
 
+def parse_int_env(name: str, default: int) -> int:
+    raw_value = os.environ.get(name)
+    if raw_value is None or raw_value == "":
+        return default
+    try:
+        return int(raw_value)
+    except (TypeError, ValueError):
+        print(f"[warn] Invalid integer for {name}={raw_value!r}; using default {default}.")
+        return default
+
+
 def run_and_tee(
     command: list[str],
     working_repo: Path,
@@ -165,14 +177,16 @@ def main() -> None:
     env = os.environ.copy()
     env.setdefault("NEMOTRON_ASSET_ROOT", str(asset_root))
     env.setdefault("NEMOTRON_OFFLINE_WHEEL_DIRS", str(asset_root / "offline_wheels"))
+    env.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
     env["NEMOTRON_PROGRESS_PATH"] = str(PROGRESS_PATH)
     env["NEMOTRON_PROGRESS_EVENTS_PATH"] = str(PROGRESS_EVENTS_PATH)
+    eval_max_samples = parse_int_env("NEMOTRON_EVAL_MAX_SAMPLES", DEFAULT_KERNEL_EVAL_MAX_SAMPLES)
 
     commands = [
         ["python", "training/kaggle_probe.py"],
         ["python", "training/kaggle_start_bootstrap.py", "--sync"],
         ["python", "training/stage1_sft.py"],
-        ["python", "eval/local_eval.py", "--stage1-dir", "outputs/stage1_sft"],
+        ["python", "eval/local_eval.py", "--stage1-dir", "outputs/stage1_sft", "--max-samples", str(eval_max_samples)],
     ]
     if not args.skip_synthetic:
         commands.insert(2, ["python", "data/generate_synthetic.py"])
@@ -180,7 +194,16 @@ def main() -> None:
         commands.extend(
             [
                 ["python", "training/stage2_grpo.py"],
-                ["python", "eval/local_eval.py", "--stage1-dir", "outputs/stage1_sft", "--stage2-dir", "outputs/stage2_grpo"],
+                [
+                    "python",
+                    "eval/local_eval.py",
+                    "--stage1-dir",
+                    "outputs/stage1_sft",
+                    "--stage2-dir",
+                    "outputs/stage2_grpo",
+                    "--max-samples",
+                    str(eval_max_samples),
+                ],
                 ["python", "submission/package_lora.py", "--adapter-dir", "outputs/stage2_grpo"],
             ]
         )

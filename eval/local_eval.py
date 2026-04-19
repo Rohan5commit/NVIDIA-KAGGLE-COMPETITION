@@ -37,7 +37,9 @@ def parse_args() -> argparse.Namespace:
 
 def load_validation(path: str | Path, max_samples: int | None = None) -> list[dict[str, Any]]:
     rows = read_jsonl(path)
-    return rows[:max_samples] if max_samples else rows
+    if max_samples is None:
+        return rows
+    return rows[: max(0, max_samples)]
 
 
 def make_prompts(config: dict[str, Any], records: list[dict[str, Any]], system_prompt: str, tokenizer=None) -> list[str]:
@@ -89,12 +91,23 @@ def load_vllm(config: dict[str, Any]):
 def load_transformers_backend(config: dict[str, Any], adapter_dir: str | None = None):
     import torch
     from peft import PeftModel
-    from transformers import AutoModelForCausalLM
+    from transformers import AutoModelForCausalLM, BitsAndBytesConfig
+
+    quantization_config = None
+    if config["model"].get("load_in_4bit", False):
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_compute_dtype=torch.bfloat16,
+        )
 
     model = AutoModelForCausalLM.from_pretrained(
         resolve_model_id(config),
+        quantization_config=quantization_config,
         torch_dtype=torch.bfloat16,
         device_map="auto",
+        low_cpu_mem_usage=True,
         trust_remote_code=config["model"]["trust_remote_code"],
         attn_implementation=resolve_attn_implementation(config["model"]["attn_implementation"]),
     )
@@ -137,20 +150,61 @@ def generate_with_transformers(model, tokenizer, prompts: list[str], temperature
     outputs: list[Any] = []
     for prompt in prompts:
         encoded = tokenizer(prompt, return_tensors="pt").to(model.device)
-        with torch.no_grad():
-            generated = model.generate(
-                **encoded,
-                max_new_tokens=max_tokens,
-                do_sample=temperature > 0,
-                temperature=max(temperature, 1e-5),
-                num_return_sequences=n,
-                pad_token_id=tokenizer.pad_token_id,
-                eos_token_id=tokenizer.eos_token_id,
-            )
         prompt_length = encoded["input_ids"].shape[-1]
-        texts = tokenizer.batch_decode(generated[:, prompt_length:], skip_special_tokens=True)
-        outputs.append(texts[0] if n == 1 else texts)
+        if n == 1:
+            with torch.no_grad():
+                generated = model.generate(
+                    **encoded,
+                    max_new_tokens=max_tokens,
+                    do_sample=temperature > 0,
+                    temperature=max(temperature, 1e-5),
+                    num_return_sequences=1,
+                    pad_token_id=tokenizer.pad_token_id,
+                    eos_token_id=tokenizer.eos_token_id,
+                )
+            texts = tokenizer.batch_decode(generated[:, prompt_length:], skip_special_tokens=True)
+            outputs.append(texts[0])
+            continue
+
+        # Sample one completion at a time to avoid a large num_return_sequences KV-cache spike.
+        prompt_outputs: list[str] = []
+        for _ in range(n):
+            with torch.no_grad():
+                generated = model.generate(
+                    **encoded,
+                    max_new_tokens=max_tokens,
+                    do_sample=temperature > 0,
+                    temperature=max(temperature, 1e-5),
+                    num_return_sequences=1,
+                    pad_token_id=tokenizer.pad_token_id,
+                    eos_token_id=tokenizer.eos_token_id,
+                )
+            prompt_outputs.append(tokenizer.batch_decode(generated[:, prompt_length:], skip_special_tokens=True)[0])
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        outputs.append(prompt_outputs)
     return outputs
+
+
+def effective_transformers_max_tokens(config: dict[str, Any], requested_tokens: int) -> int:
+    configured_cap = config.get("evaluation", {}).get("transformers_max_new_tokens_cap", 1024)
+    try:
+        cap = int(configured_cap)
+    except (TypeError, ValueError):
+        cap = 1024
+    return max(1, min(int(requested_tokens), cap))
+
+
+def release_torch_memory() -> None:
+    try:
+        import gc
+        import torch
+
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:
+        pass
 
 
 def best_of_n_accuracy(records: list[dict[str, Any]], candidates: list[list[str]]) -> dict[str, Any]:
@@ -192,8 +246,15 @@ def main() -> None:
     default_prompt = config["template"]["system_prompt"]
     use_vllm_backend = importlib.util.find_spec("vllm") is not None
     vllm_model = load_vllm(config) if use_vllm_backend else None
+    fallback_max_tokens = effective_transformers_max_tokens(config, config["evaluation"]["deterministic_max_tokens"])
 
-    for stage_name, adapter_dir in [("baseline", None), ("stage1_sft", stage1_dir), ("stage2_grpo", stage2_dir)]:
+    stage_specs: list[tuple[str, str | None]] = [("baseline", None)]
+    if Path(stage1_dir).exists():
+        stage_specs.append(("stage1_sft", stage1_dir))
+    if Path(stage2_dir).exists():
+        stage_specs.append(("stage2_grpo", stage2_dir))
+
+    for stage_name, adapter_dir in stage_specs:
         adapter_path = adapter_dir if adapter_dir and Path(adapter_dir).exists() else None
         prompts = make_prompts(config, validation_rows, default_prompt, tokenizer=tokenizer)
         if use_vllm_backend:
@@ -211,8 +272,10 @@ def main() -> None:
                 tokenizer,
                 prompts,
                 temperature=config["evaluation"]["deterministic_temperature"],
-                max_tokens=config["evaluation"]["deterministic_max_tokens"],
+                max_tokens=fallback_max_tokens,
             )
+            stage_model = None
+            release_torch_memory()
         results[stage_name] = evaluate_predictions(outputs, validation_rows)
 
     ablation_adapter = stage2_dir if Path(stage2_dir).exists() else stage1_dir if Path(stage1_dir).exists() else None
@@ -235,7 +298,7 @@ def main() -> None:
                 tokenizer,
                 prompts,
                 temperature=config["evaluation"]["deterministic_temperature"],
-                max_tokens=config["evaluation"]["deterministic_max_tokens"],
+                max_tokens=fallback_max_tokens,
             )
         score = evaluate_predictions(outputs, validation_rows)["accuracy"]
         ablation_scores.append({"prompt": prompt, "accuracy": score})
@@ -259,10 +322,13 @@ def main() -> None:
             tokenizer,
             prompts,
             temperature=config["evaluation"]["best_of_n_temperature"],
-            max_tokens=config["evaluation"]["deterministic_max_tokens"],
+            max_tokens=fallback_max_tokens,
             n=config["evaluation"]["best_of_n"],
         )
     results["best_of_n"] = best_of_n_accuracy(validation_rows, candidates)
+    if ablation_model is not None:
+        ablation_model = None
+        release_torch_memory()
 
     save_json(eval_dir / "local_eval_summary.json", results)
     print(results)
