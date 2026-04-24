@@ -71,6 +71,27 @@ The status helper can read these and compute `% done` and ETA:
 python kaggle/control_kernel.py status --kernel rohansan1/nemotron-reasoning-lora-trainer
 ```
 
+
+## OCI backup for future Kaggle resume
+
+The canonical Stage 1 resume artifact is now in OCI Object Storage, not GitHub Releases.
+
+- Region: `ap-singapore-1`
+- Namespace: `ax9iu0ga9n79`
+- Bucket: `nemotron-kaggle-v9-backup`
+- Object: `kaggle-v9-stage1-minimal.tar`
+- Checksum object: `kaggle-v9-stage1-minimal.tar.sha256`
+- Manifest: `artifacts/oci_backup_manifest.json`
+
+Use:
+
+```bash
+scripts/oci_session_bootstrap.sh
+scripts/oci_kaggle_stage1_pull.sh
+```
+
+This OCI backup was verified and the old GitHub release copy was deleted.
+
 ## Operational rule
 
 Keep all competition code, status notes, and automation in this repo and Kaggle.

@@ -45,6 +45,25 @@ Train and submit a Nemotron reasoning LoRA for Kaggle competition:
 4. Once status is `RUNNING`, monitor:
    - `python kaggle/control_kernel.py status --kernel rohansan1/nemotron-reasoning-lora-trainer`
 
+
+## OCI resume source (2026-04-24)
+
+The canonical off-GitHub backup for Kaggle Stage 1 is now OCI Object Storage.
+
+- Region: `ap-singapore-1`
+- Namespace: `ax9iu0ga9n79`
+- Bucket: `nemotron-kaggle-v9-backup`
+- Object: `kaggle-v9-stage1-minimal.tar`
+- Checksum object: `kaggle-v9-stage1-minimal.tar.sha256`
+- Manifest: `artifacts/oci_backup_manifest.json`
+
+When resuming Kaggle later, pull from OCI first. Do not look for the deleted GitHub release.
+
+Helpful scripts:
+
+- `scripts/oci_session_bootstrap.sh`
+- `scripts/oci_kaggle_stage1_pull.sh`
+
 ## Notes on API behavior
 
 - Cancel endpoint now requires `kernel_session_id`.
