@@ -1,0 +1,25 @@
+{
+  "storage_provider": "oci_object_storage",
+  "always_free_guardrail_gb": 20,
+  "region": "ap-singapore-1",
+  "namespace": "ax9iu0ga9n79",
+  "bucket": "nemotron-kaggle-v9-backup",
+  "uploaded_at": "2026-04-24T11:38:00+08:00",
+  "source_release_deleted": true,
+  "local_large_backup_deleted": true,
+  "objects": [
+    {
+      "name": "kaggle-v9-stage1-minimal.tar",
+      "bytes": 1757598208,
+      "sha256": "5a3538565ba4f3f5a2c58360ee6697c90c449f71e6e9cb7fd13fefd9aff92c0e"
+    },
+    {
+      "name": "kaggle-v9-stage1-minimal.tar.sha256",
+      "bytes": 100
+    }
+  ],
+  "notes": [
+    "Use this OCI copy instead of a GitHub release when resuming the Kaggle pipeline.",
+    "No paid OCI compute, volume, database, or load balancer was created for this backup."
+  ]
+}
